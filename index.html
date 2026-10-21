@@ -64,6 +64,8 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <h2 style="font-size:1.1rem;margin:0 0 8px">Workshop insert inventory</h2>
   <p class="note">Start with an empty list. Add codes as you scan or read the boxes; review the batch and save the inserts to this phone.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
+  <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
+  <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div>
   <div class="grid">
     <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
@@ -71,7 +73,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
   <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p>
   <div id="batchList" class="note"></div>
-  <p class="warn" style="margin-top:10px">Batch inventory prototype: this version saves codes on this phone and detects duplicates. Live camera QR decoding and automatic manufacturer-data lookup are the next integration step; don't treat a scanned code as verified cutting data until its source is checked.</p>
+  <p class="warn" style="margin-top:10px">The camera scanner reads supported QR codes and barcodes. A code may contain only a product ID or URL, not cutting data. Unknown codes are saved for review; verify manufacturer data before using cutting settings.</p>
 </section>
 <section class="panel">
   <h2 style="font-size:1.05rem;margin:0 0 8px">Before cutting</h2>
@@ -183,6 +185,34 @@ function addToBatch(){const code=$('scanCode').value.trim();if(!code){$('batchSt
 $('addScan').addEventListener('click',addToBatch);
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
 $('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
+// Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.
+let scanStream=null, scanLoopActive=false, lastDetectedCode='', lastDetectedAt=0;
+async function startCameraScanner(){
+ const video=$('scanVideo');
+ if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('cameraStatus').textContent='Camera access is unavailable in this browser. Use manual code entry.';return;}
+ if(!('BarcodeDetector' in window)){$('cameraStatus').textContent='This browser does not support built-in QR/barcode detection. Use manual entry, or try updated Chrome on Android.';return;}
+ try{
+  const supported=await BarcodeDetector.getSupportedFormats();
+  const wanted=['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','data_matrix','pdf417'];
+  const formats=wanted.filter(x=>supported.includes(x));
+  const detector=new BarcodeDetector({formats:formats.length?formats:['qr_code']});
+  scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  video.srcObject=scanStream; await video.play(); $('cameraWrap').hidden=false; $('startCamera').disabled=true; $('stopCamera').disabled=false; scanLoopActive=true;
+  $('cameraStatus').textContent='Scanner running. Hold each box steady until it is added; keep moving to the next box.';
+  const tick=async()=>{
+   if(!scanLoopActive)return;
+   try{
+    if(video.readyState>=2){const codes=await detector.detect(video);if(codes.length){const raw=(codes[0].rawValue||'').trim();const now=Date.now();if(raw && (raw!==lastDetectedCode||now-lastDetectedAt>1800)){lastDetectedCode=raw;lastDetectedAt=now;$('scanCode').value=raw;addToBatch();$('cameraStatus').textContent='Captured: '+raw+' · continue to the next box.';}}}
+   }catch(e){}
+   if(scanLoopActive)requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+ }catch(e){stopCameraScanner();$('cameraWrap').hidden=false;$('cameraStatus').textContent='Could not start camera. Allow camera permission and try again, or enter codes manually.';}
+}
+function stopCameraScanner(){scanLoopActive=false;if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}$('scanVideo').srcObject=null;$('startCamera').disabled=false;$('stopCamera').disabled=true;$('cameraStatus').textContent='Scanner stopped. Your batch is still here.';}
+$('startCamera').addEventListener('click',startCameraScanner);
+$('stopCamera').addEventListener('click',stopCameraScanner);
+window.addEventListener('pagehide',stopCameraScanner);
 renderBatch();
 populateGrades(false);
 updateOperationFields();

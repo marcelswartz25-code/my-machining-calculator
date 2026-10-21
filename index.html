@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172033">
+<meta name="description" content="Offline-first machining calculator and workshop insert inventory">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>My Machining Calculator</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;background:#f2f5f9}
+*{box-sizing:border-box}body{margin:0}header{background:#172033;color:white;padding:20px 16px 18px}
+header h1{font-size:1.35rem;margin:0 0 4px}header p{margin:0;color:#c8d2e4;font-size:.92rem}
+main{max-width:720px;margin:0 auto;padding:14px}
+.panel{background:white;border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 12px #15223a0c}
+label{display:block;font-size:.88rem;font-weight:650;margin:0 0 6px}
+select,input{width:100%;font:inherit;padding:12px;border:1px solid #cbd4e1;border-radius:10px;background:white;color:#172033}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin-bottom:12px}
+.segment{display:flex;gap:8px;flex-wrap:wrap}.segment button{flex:1;min-width:100px;border:1px solid #cbd4e1;border-radius:10px;background:white;padding:11px;font:inherit}
+.segment button.active{background:#172033;color:white;border-color:#172033}
+.results{display:grid;grid-template-columns:1fr 1fr;gap:10px}.result{background:#f2f5f9;border-radius:12px;padding:13px}.result small{display:block;color:#586579;margin-bottom:5px}.result strong{font-size:1.35rem;overflow-wrap:anywhere}
+.big{background:#e6f5ec}.big strong{color:#146c3a;font-size:1.8rem}
+.note{font-size:.83rem;line-height:1.45;color:#526075}.warn{background:#fff4d9;padding:12px;border-radius:10px;font-size:.84rem;line-height:1.45}
+footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
+@media(min-width:560px){main{padding:20px}.panel{padding:20px}}
+</style>
+</head>
+<body>
+<header><h1>🔧 My Machining Calculator</h1><p>Metric machining settings · live results</p></header>
+<main>
+<section class="panel">
+  <div class="field"><label for="material">Material</label><select id="material">
+    <option value="bright">Bright mild steel</option><option value="mild">Mild steel</option><option value="aluminium" selected>Aluminium</option><option value="stainless">Stainless steel</option><option value="cast">Cast iron</option><option value="other">Other (use steel starting values)</option>
+  </select></div>
+  <div class="field"><label>Operation</label><div class="segment" id="operations">
+    <button data-op="rough" class="active">OD turning · Rough</button><button data-op="finish">OD turning · Finish</button><button data-op="id">ID turning</button><button data-op="face">Facing</button><button data-op="groove">Grooving</button><button data-op="part">Parting-off</button><button data-op="thread">Threading</button>
+  </div></div>
+  <div class="grid">
+    <div class="field"><label for="diameter">Starting diameter (mm)</label><input id="diameter" type="number" min="0.1" step="any" value="50"></div>
+    <div class="field" id="removeField"><label for="remove">Remove from diameter (mm)</label><input id="remove" type="number" min="0" step="any" value="3"></div>
+    <div class="field" id="grooveWidthField" hidden><label for="grooveWidth">Groove / blade width (mm)</label><input id="grooveWidth" type="number" min="0.1" step="any" value="3"></div>
+    <div class="field" id="threadPitchField" hidden><label for="threadPitch">Thread pitch (mm)</label><input id="threadPitch" type="number" min="0.1" step="any" value="1.5"></div>
+    <div class="field"><label for="tool">Insert shape</label><select id="tool"><option value="auto">Automatic default</option><option value="WNMG">WNMG carbide</option><option value="DNMG">DNMG carbide</option><option value="other">Other carbide</option><option value="HSS">HSS tool</option></select></div>
+    <div class="field"><label for="brand">Insert manufacturer</label><select id="brand"><option value="unknown">Not sure / other</option><option value="YG-1">YG-1</option><option value="ISCAR">ISCAR</option><option value="Kennametal">Kennametal</option></select></div>
+    <div class="field"><label for="grade">Grade / chipbreaker</label><select id="grade"><option value="unknown">Unknown / not listed</option></select></div>
+    <div class="field"><label for="length">Length to machine (mm, optional)</label><input id="length" type="number" min="0" step="any" placeholder="e.g. 900"></div>
+    <div class="field"><label for="coolant">Coolant</label><select id="coolant"><option value="yes">Available</option><option value="no">Dry cutting</option></select></div>
+  </div>
+</section>
+<section class="panel">
+  <h2 style="font-size:1.1rem;margin:0 0 12px">Live recommended settings</h2>
+  <div class="results">
+    <div class="result big"><small>Spindle speed (at start diameter)</small><strong id="rpm">— RPM</strong></div>
+    <div class="result"><small>Cutting speed</small><strong id="vc">— m/min</strong></div>
+    <div class="result"><small>Feed</small><strong id="feed">— mm/rev</strong></div>
+    <div class="result"><small>Depth per side</small><strong id="depth">— mm</strong></div>
+    <div class="result"><small>Final diameter</small><strong id="final">— mm</strong></div>
+    <div class="result"><small>Feed speed (approx.)</small><strong id="mmmin">— mm/min</strong></div>
+  </div>
+  <p class="note" id="toolnote" style="margin-bottom:0"></p>
+</section>
+<section class="panel" id="inventoryPanel">
+  <h2 style="font-size:1.1rem;margin:0 0 8px">Workshop insert inventory</h2>
+  <p class="note">Start with an empty list. Add codes as you scan or read the boxes; review the batch and save the inserts to this phone.</p>
+  <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
+  <div class="grid">
+    <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
+    <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
+  </div>
+  <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
+  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p>
+  <div id="batchList" class="note"></div>
+  <p class="warn" style="margin-top:10px">Batch inventory prototype: this version saves codes on this phone and detects duplicates. Live camera QR decoding and automatic manufacturer-data lookup are the next integration step; don't treat a scanned code as verified cutting data until its source is checked.</p>
+</section>
+<section class="panel">
+  <h2 style="font-size:1.05rem;margin:0 0 8px">Before cutting</h2>
+  <div class="warn">Grade descriptions are based on manufacturer catalog/product information, but the calculator's cutting speeds remain conservative starter estimates—not copied, guaranteed maker cutting data. Exact insert code, chipbreaker, workpiece grade, rigidity and machine limits matter. Aluminium needs a sharp aluminium-suitable edge; a steel chipbreaker may rub or build up.</div>
+  <p class="note">RPM is calculated using N = (1000 × cutting speed) ÷ (π × diameter). For facing, use a lower speed near the centre unless your machine has a suitable constant-surface-speed system.</p>
+  <p class="note" id="gradeinfo"></p>
+</section>
+</main>
+<footer>My Machining Calculator · Offline-ready prototype · Always verify tooling and machine limits.</footer>
+<script>
+let operation='rough';
+const $=id=>document.getElementById(id);
+const grades={
+ 'YG-1':[
+  {id:'yg3115',name:'YG3115 — general steel',materials:['bright','mild','other'],vc:90,feed:0.16,desc:'YG-1 lists YG3115 as a first-choice grade for general steel applications.'},
+  {id:'yg3010',name:'YG3010 — finishing steel',materials:['bright','mild','other'],vc:100,feed:0.10,desc:'YG-1 lists YG3010 for finishing steel.'},
+  {id:'yg3015',name:'YG3015 — continuous steel cutting',materials:['bright','mild','other'],vc:90,feed:0.16,desc:'YG-1 describes YG3015 as balanced for productivity in continuous cuts on steel.'},
+  {id:'yg3020',name:'YG3020 — general steel',materials:['bright','mild','other'],vc:85,feed:0.16,desc:'YG-1 lists YG3020 as a first-choice grade for general steel applications.'},
+  {id:'yg3030',name:'YG3030 — interrupted steel cutting',materials:['bright','mild','other'],vc:70,feed:0.14,desc:'YG-1 lists YG3030 for interrupted cuts on steel; speed is reduced conservatively here.'},
+  {id:'yg100',name:'YG100 — aluminium (DLC)',materials:['aluminium'],vc:180,feed:0.16,desc:'YG-1 identifies YG100 as a DLC-coated first-choice grade for aluminium.'},
+  {id:'yg10',name:'YG10 — general aluminium (uncoated)',materials:['aluminium'],vc:140,feed:0.14,desc:'YG-1 identifies YG10 as an uncoated grade for general aluminium machining.'}
+ ],
+ 'ISCAR':[
+  {id:'ic8250',name:'IC8250 — general steel / stainless',materials:['bright','mild','stainless','other'],vc:85,feed:0.15,desc:'ISCAR describes IC8250 as a tough general-machining grade; the exact chipbreaker still sets feed and depth limits.'},
+  {id:'ic8150',name:'IC8150 — stable, higher-speed steel',materials:['bright','mild','other'],vc:100,feed:0.14,desc:'ISCAR recommends IC8150 for higher-speed steel machining in stable conditions.'},
+  {id:'ic20',name:'IC20 — aluminium / non-ferrous (uncoated)',materials:['aluminium'],vc:120,feed:0.12,desc:'ISCAR describes IC20 as an uncoated grade for semi-finishing, finishing and semi-roughing of aluminium and other listed materials.'},
+  {id:'ic07',name:'IC07 — aluminium / non-ferrous',materials:['aluminium'],vc:160,feed:0.12,desc:'ISCAR describes IC07 as a hard uncoated submicron grade for aluminium and other non-ferrous materials; confirm insert style and edge geometry.'}
+ ],
+ 'Kennametal':[
+  {id:'kcp25c',name:'KCP25C — steel (CVD)',materials:['bright','mild','other'],vc:90,feed:0.16,desc:'Kennametal describes KCP25C as a coated grade for carbon and alloy steels.'},
+  {id:'kcu10b',name:'KCU10B — broad material range, harder/wear-resistant',materials:['bright','mild','stainless','cast','aluminium','other'],vc:80,feed:0.14,desc:'Kennametal describes KCU10B as a wear-resistant grade across several material groups. This is not an aluminium-specific geometry recommendation.'},
+  {id:'kcu25b',name:'KCU25B — broad material range, tougher',materials:['bright','mild','stainless','cast','aluminium','other'],vc:75,feed:0.15,desc:'Kennametal describes KCU25B as the tougher option in its KCU10B/KCU25B family across several material groups. Confirm application and insert geometry.'}
+ ],
+ 'unknown':[
+  {id:'unknown',name:'Unknown / not listed',materials:[],vc:null,feed:null,desc:'No grade-specific profile selected. Conservative generic values are used.'},
+  {id:'aluedge',name:'Sharp edge suitable for aluminium',materials:['aluminium'],vc:140,feed:0.14,desc:'Generic profile only; verify that the actual insert is intended for aluminium.'},
+  {id:'steelgrade',name:'General steel grade / chipbreaker',materials:['bright','mild','other'],vc:85,feed:0.15,desc:'Generic profile only; verify the actual grade and chipbreaker.'}
+ ]
+};
+function populateGrades(keep=true){
+ const brand=$('brand').value, old=$('grade').value, list=grades[brand]||grades.unknown;
+ $('grade').innerHTML='';
+ list.forEach(g=>{const o=document.createElement('option');o.value=g.id;o.textContent=g.name;$('grade').appendChild(o)});
+ if(keep&&list.some(g=>g.id===old)) $('grade').value=old;
+ calculate();
+}
+$('brand').addEventListener('change',()=>populateGrades(false));
+document.querySelectorAll('#operations button').forEach(b=>b.addEventListener('click',()=>{operation=b.dataset.op;document.querySelectorAll('#operations button').forEach(x=>x.classList.toggle('active',x===b));updateOperationFields();calculate()}));
+['material','diameter','remove','tool','grade','length','coolant','grooveWidth','threadPitch'].forEach(id=>$(id).addEventListener('input',calculate));
+function updateOperationFields(){
+ $('removeField').hidden=['groove','part','thread'].includes(operation);
+ $('grooveWidthField').hidden=!['groove','part'].includes(operation);
+ $('threadPitchField').hidden=operation!=='thread';
+}
+
+function calculate(){
+ const material=$('material').value, D=parseFloat($('diameter').value), reduction=parseFloat($('remove').value);
+ const toolChoice=$('tool').value, brand=$('brand').value, gradeId=$('grade').value, coolant=$('coolant').value;
+ const list=grades[brand]||grades.unknown, selected=list.find(g=>g.id===gradeId)||list[0];
+ if(!Number.isFinite(D)||D<=0||(!['groove','part','thread'].includes(operation)&&(!Number.isFinite(reduction)||reduction<0||reduction>=D))){
+  ['rpm','vc','feed','depth','final','mmmin'].forEach(id=>$(id).textContent='Check input');
+  $('toolnote').textContent='Enter a positive starting diameter and a removal amount smaller than the diameter.';return;
+ }
+ let tool=toolChoice==='auto'?(material==='aluminium'?'DNMG':['bright','mild','stainless','cast','other'].includes(material)?'WNMG':'Confirm tool'):toolChoice;
+ let vc, feed;
+ const usable=selected && selected.vc!==null && selected.materials.includes(material);
+ if(usable){vc=selected.vc;feed=selected.feed;}
+ else {
+  if(material==='aluminium') vc=gradeId==='aluedge'?140:100;
+  else if(material==='stainless') vc=operation==='finish'?70:55;
+  else if(material==='cast') vc=operation==='finish'?80:65;
+  else vc=operation==='finish'?100:75;
+  feed=operation==='finish'?0.08:operation==='face'?0.10:0.14;
+ }
+ if(operation==='finish') {vc*=0.85;feed=Math.min(feed,0.10)}
+ if(operation==='face') {feed=Math.min(feed,0.12);vc*=0.9}
+ if(operation==='id') {vc*=0.75;feed=Math.min(feed,0.12)}
+ if(operation==='groove') {vc*=0.55;feed=Math.min(feed,0.08)}
+ if(operation==='part') {vc*=0.45;feed=Math.min(feed,0.06)}
+ if(operation==='thread') {vc*=0.35;feed=parseFloat($('threadPitch').value)||1.5;}
+ if(tool==='HSS'){vc=material==='aluminium'?45:material==='stainless'?12:20;feed=operation==='finish'?0.06:0.10;}
+ if(coolant==='no'&&['stainless','aluminium'].includes(material)) vc*=0.85;
+ const rpm=Math.round((vc*1000)/(Math.PI*D));
+ const effectiveRemoval=['groove','part','thread'].includes(operation)?0:reduction;
+ const depth=effectiveRemoval/2, finalD=D-effectiveRemoval;
+ const extra=operation==='groove'||operation==='part'?(' Enter groove/blade width: '+($('grooveWidth').value||'—')+' mm. Use insert-specific data; displayed feed is only a conservative estimate. '):operation==='thread'?(' Feed per revolution is set to the entered pitch ('+($('threadPitch').value||'—')+' mm). Threading RPM is a cautious estimate; use the thread insert maker’s pass schedule and depth data. '):operation==='id'?' ID boring may need reduced speed due to bar overhang and rigidity. ':'';
+ $('rpm').textContent=rpm.toLocaleString()+' RPM';
+ $('vc').textContent=Math.round(vc)+' m/min';
+ $('feed').textContent=feed.toFixed(2)+' mm/rev';
+ $('depth').textContent=depth.toFixed(2)+' mm';
+ $('final').textContent=finalD.toFixed(2)+' mm';
+ $('mmmin').textContent=Math.round(rpm*feed).toLocaleString()+' mm/min';
+ $('toolnote').textContent='Selected: '+tool+' · '+brand+' · '+selected.name+'. '+extra+(operation==='face'?'Facing speed changes with diameter; slow down toward the centre. ':'')+(effectiveRemoval>2?'A '+effectiveRemoval.toFixed(2)+' mm diameter reduction is a '+depth.toFixed(2)+' mm radial cut; consider multiple passes if load, chatter or chip control is poor. ':'')+'Spindle speed is theoretical; choose a suitable available lathe speed at or below this value.';
+ $('gradeinfo').textContent=selected.desc+' Feed/depth limits are not universal for a grade: check the exact full insert code and maker data before taking a heavy cut.';
+}
+// Local-first workshop inventory and batch queue
+const inventoryKey='myMachiningCalculatorInventoryV1';
+let scanBatch=[];
+function readInventory(){try{return JSON.parse(localStorage.getItem(inventoryKey)||'[]')}catch(e){return []}}
+function renderBatch(){
+ const saved=readInventory();
+ $('batchStatus').textContent=scanBatch.length+' items in current batch · '+saved.length+' saved inserts';
+ $('batchList').innerHTML='';
+ if(!scanBatch.length && !saved.length){$('batchList').textContent='No inserts added yet.';return;}
+ if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
+ if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape;ul.appendChild(li)});$('batchList').appendChild(ul)}
+}
+function addToBatch(){const code=$('scanCode').value.trim();if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}const all=[...readInventory(),...scanBatch];if(all.some(x=>x.code.toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanCode').value='';return;}scanBatch.push({code,brand:$('scanBrand').value,shape:$('scanShape').value,addedAt:new Date().toISOString()});$('scanCode').value='';renderBatch();$('scanCode').focus()}
+$('addScan').addEventListener('click',addToBatch);
+$('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
+$('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
+renderBatch();
+populateGrades(false);
+updateOperationFields();
+</script>
+<script>
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(err => console.warn('Offline update setup unavailable:', err)));
+}
+</script>
+</body></html>

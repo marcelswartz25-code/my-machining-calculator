@@ -208,7 +208,16 @@ function calculate(){
 // Local-first workshop inventory and batch queue
 const inventoryKey='myMachiningCalculatorInventoryV1';
 let scanBatch=[];
-function readInventory(){try{return JSON.parse(localStorage.getItem(inventoryKey)||'[]')}catch(e){return []}}
+function readInventory(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(inventoryKey)||'[]');
+    if(!Array.isArray(saved))return [];
+    // Remove old QR/homepage URL records from earlier versions.
+    const clean=saved.filter(item=>!/^https?:\/\//i.test(String(item&&item.code||'').trim()));
+    if(clean.length!==saved.length)localStorage.setItem(inventoryKey,JSON.stringify(clean));
+    return clean;
+  }catch(e){return []}
+}
 function renderBatch(){
  const saved=readInventory();
  $('batchStatus').textContent=scanBatch.length+' items in current batch · '+saved.length+' saved inserts';
@@ -250,7 +259,7 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  const catalogue=lookupKnownInsert(code); if(catalogue){brand=catalogue.brand;shape=catalogue.shape;grade=catalogue.grade;chipbreaker=catalogue.chipbreaker;operation=catalogue.operation;materials=catalogue.materials;confidence=catalogue.confidence;dataStatus=catalogue.dataStatus;return {...catalogue,code:catalogue.code,sourceUrl:catalogue.sourceUrl,sourceName:catalogue.sourceName,manufacturerSearchUrl:manufacturerSearchUrl(catalogue)};}
  return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus,manufacturerSearchUrl:manufacturerSearchUrl({brand,code,grade})};
 }
-let pendingReview=null;
+let pendingReview=null; let pendingOcrDetails=null;
 function openUniversalLookup(item){
   const brand=String(item.brand||'').trim(), code=String(item.code||'').trim(), grade=String(item.grade||'').trim();
   const product=[code,grade].filter(Boolean).join(' ');
@@ -281,7 +290,16 @@ function showReview(item){
 }
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
- const inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
+ let inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
+  // Merge OCR fields only when they belong to the code currently being reviewed.
+  if(pendingOcrDetails && String(pendingOcrDetails.code||'').replace(/[\s_]/g,'').toUpperCase()===code.replace(/[\s_]/g,'').toUpperCase()){
+    const o=pendingOcrDetails;
+    if(o.brand && o.brand!=='Unknown')inferred.brand=o.brand;
+    if(o.shape)inferred.shape=o.shape;
+    if(o.grade)inferred.grade=o.grade;
+    if(o.chipbreaker)inferred.chipbreaker=o.chipbreaker;
+    if(o.grade||o.chipbreaker)inferred.dataStatus='Insert code captured; grade/chipbreaker transcribed by OCR and must be checked against the printed label and official manufacturer data';
+  }
   if(/^https?:\/\//i.test(code)){$('scanFeedback').textContent='Manufacturer URL ignored: scan or enter the printed product code instead.';$('scanCode').value='';return;}
  if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='QR link detected, but it is not an insert identity. The app will keep reading the printed label; no inventory item was added.';$('cameraStatus').textContent='Manufacturer homepage QR ignored. Hold the printed product label in view for automatic text recognition.';$('scanCode').value='';return;}
  const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='This insert code is already in the batch or saved inventory: '+code;$('scanCode').value='';return;}
@@ -294,6 +312,7 @@ function addToBatch(){
 $('reviewSave').addEventListener('click',()=>{if(!pendingReview)return;const saved=readInventory();if(saved.some(x=>String(x.code).toLowerCase()===pendingReview.code.toLowerCase())){$('reviewDetails').textContent='This code is already saved. Duplicate skipped.';}else{try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat([pendingReview])));scanBatch=scanBatch.filter(x=>String(x.code).toLowerCase()!==pendingReview.code.toLowerCase());$('scanFeedback').textContent='Saved '+pendingReview.code+' to this phone. Ready for the next box.';pendingReview=null;$('scanReview').hidden=true;renderBatch();updateHomeStatus();$('scanCode').focus();}catch(e){$('scanFeedback').textContent='Could not save. Check phone storage settings.';}}});
 $('reviewDismiss').addEventListener('click',()=>{$('scanReview').hidden=true;pendingReview=null;$('scanFeedback').textContent='Review closed. Any item already in the batch remains there until saved or removed.';});
 $('addScan').addEventListener('click',addToBatch);
+$('scanCode').addEventListener('input',()=>{if(pendingOcrDetails && String(pendingOcrDetails.code||'').replace(/[\s_]/g,'').toUpperCase()!==$('scanCode').value.trim().replace(/[\s_]/g,'').toUpperCase())pendingOcrDetails=null;});
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
 $('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';$('scanFeedback').textContent='Saved '+fresh.length+' insert record(s) locally. Any URL-only scans still need product identification and verified cutting data.';updateHomeStatus();}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
 // Printed-label OCR: loads Tesseract.js on demand, then reads a still frame from the live camera.
@@ -328,7 +347,7 @@ async function readPrintedLabel(){
   let recognized='';try{const output=await worker.recognize(canvas);recognized=(output.data.text||'').trim();}finally{await worker.terminate();}
   if(!recognized){result.textContent='No readable text found. Move closer, improve the light, and try again.';return;}
   const details=findOcrDetails(recognized);
-  if(details.code){$('scanCode').value=details.code;}
+  if(details.code){$('scanCode').value=details.code;pendingOcrDetails=details;}
   if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
   let summary='Text read from label. '+(details.code?'Possible insert code: '+details.code+'. ':'No reliable insert code found. ')+(details.grade?'Grade: '+details.grade+'. ':'')+(details.brand!=='Unknown'?'Manufacturer: '+details.brand+'. ':'')+(details.chipbreaker?'Possible chipbreaker: '+details.chipbreaker+'. ':'');
@@ -352,7 +371,7 @@ async function autoReadLabelFrame(video){
   if(!details.code || details.code.length<7)return;
   if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
   lastOcrCode=details.code;lastOcrAt=now;
-  $('scanCode').value=details.code;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  $('scanCode').value=details.code;pendingOcrDetails=details;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
   $('ocrResult').hidden=false;$('ocrResult').textContent='Automatically read printed label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:'')+(details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
   $('scanFeedback').textContent='Printed insert code detected automatically: '+details.code+'. Preparing review card.';

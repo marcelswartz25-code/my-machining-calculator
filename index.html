@@ -25,11 +25,36 @@ select,input{width:100%;font:inherit;padding:12px;border:1px solid #cbd4e1;borde
 .note{font-size:.83rem;line-height:1.45;color:#526075}
 .nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 14px}.nav button{border:1px solid #cbd4e1;border-radius:12px;background:white;padding:12px 8px;font:inherit;font-weight:650;color:#172033}.nav button.active{background:#172033;color:white;border-color:#172033}.home-title{font-size:1.15rem;margin:0 0 6px}.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.home-card{border:1px solid #d8e0eb;border-radius:14px;background:#fff;padding:16px;text-align:left;color:#172033;font:inherit;min-height:110px}.home-card strong{display:block;font-size:1rem;margin-bottom:6px}.home-card span{display:block;font-size:.84rem;color:#526075;line-height:1.4}.statusline{padding:10px 12px;background:#eef5ff;border-radius:10px;margin:10px 0;font-size:.86rem;line-height:1.4}.warn{background:#fff4d9;padding:12px;border-radius:10px;font-size:.84rem;line-height:1.45}
 footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
+
+.app-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.theme-control{display:flex;align-items:center;gap:8px;min-width:150px}
+.theme-control label{margin:0;color:#c8d2e4;font-size:.82rem}
+.theme-control select{width:auto;min-width:120px;padding:8px 10px;border-radius:10px;background:#fff;color:#172033}
+body[data-theme="dark"]{background:#101722;color:#e7edf6}
+body[data-theme="dark"] header{background:#0b1019}
+body[data-theme="dark"] .panel,body[data-theme="dark"] .home-card{background:#1b2635;color:#e7edf6;box-shadow:0 2px 12px #0004}
+body[data-theme="dark"] .home-card{border-color:#344257}
+body[data-theme="dark"] .home-card span,body[data-theme="dark"] .note,body[data-theme="dark"] footer{color:#b5c1d2}
+body[data-theme="dark"] select,body[data-theme="dark"] input{background:#111a27;color:#e7edf6;border-color:#435168}
+body[data-theme="dark"] .segment button,body[data-theme="dark"] .nav button{background:#202c3d;color:#e7edf6;border-color:#435168}
+body[data-theme="dark"] .segment button.active,body[data-theme="dark"] .nav button.active{background:#dce8f8;color:#142033;border-color:#dce8f8}
+body[data-theme="dark"] .result{background:#111a27}
+body[data-theme="dark"] .result small{color:#b5c1d2}
+body[data-theme="dark"] .big{background:#153b2b}
+body[data-theme="dark"] .big strong{color:#8ee0ae}
+body[data-theme="dark"] .statusline{background:#1c3552;color:#dceaff}
+body[data-theme="dark"] .warn{background:#49391c;color:#ffe8b2}
+body[data-theme="dark"] #scanReview{background:#20334d!important}
+body[data-theme="dark"] #batchList{color:#c4cfde}
+body[data-theme="dark"] a{color:#8fc5ff}
+body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;border-color:#435168}
+@media(max-width:420px){.app-header{align-items:flex-start}.theme-control{width:100%;justify-content:flex-start}.theme-control select{flex:1}}
+
 @media(min-width:560px){main{padding:20px}.panel{padding:20px}}
 </style>
 </head>
 <body>
-<header><h1>🔧 My Machining Calculator</h1><p>Metric machining settings · live results</p></header>
+<header class="app-header"><div><h1>🔧 My Machining Calculator</h1><p>Metric machining settings · live results</p></div><div class="theme-control"><label for="themeSelect">Appearance</label><select id="themeSelect" aria-label="Choose light or dark theme"><option value="light">☀️ Light</option><option value="dark">🌙 Dark</option></select></div></header>
 <main>
 <nav class="nav" aria-label="Main navigation">
   <button type="button" class="active" data-view="homeView">Home</button>
@@ -63,7 +88,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="field"><label for="tool">Insert shape</label><select id="tool"><option value="auto">Automatic default</option><option value="WNMG">WNMG carbide</option><option value="DNMG">DNMG carbide</option><option value="other">Other carbide</option><option value="HSS">HSS tool</option></select></div>
     <div class="field"><label for="brand">Insert manufacturer</label><select id="brand"><option value="unknown">Not sure / other</option><option value="YG-1">YG-1</option><option value="ISCAR">ISCAR</option><option value="Kennametal">Kennametal</option></select></div>
     <div class="field"><label for="grade">Grade / chipbreaker</label><select id="grade"><option value="unknown">Unknown / not listed</option></select></div>
-    <div class="field"><label for="length">Length to machine (mm, optional)</label><input id="length" type="number" min="0" step="any" placeholder="e.g. 900"></div>
+    <div class="field"><label for="maxRpm">Lathe RPM limit (optional)</label><input id="maxRpm" type="number" min="0" step="any" placeholder="e.g. 1600"></div><div class="field"><label for="length">Length to machine (mm, optional)</label><input id="length" type="number" min="0" step="any" placeholder="e.g. 900"></div>
     <div class="field"><label for="coolant">Coolant</label><select id="coolant"><option value="yes">Available</option><option value="no">Dry cutting</option></select></div>
   </div>
 </section>
@@ -78,6 +103,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="result"><small>Feed speed (approx.)</small><strong id="mmmin">— mm/min</strong></div>
   </div>
   <p class="note" id="toolnote" style="margin-bottom:0"></p>
+  <div class="statusline" id="passPlan" aria-live="polite">Enter a diameter reduction to see a rough pass plan.</div>
 </section>
 </div>
 <div id="inventoryView" hidden>
@@ -93,6 +119,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
+  <div class="segment" style="margin-top:8px"><button type="button" id="exportInventory">Export inventory backup</button><button type="button" id="importInventoryButton">Import backup</button><input id="importInventoryFile" type="file" accept="application/json,.json" hidden></div><p class="note">Back up your saved inserts to a JSON file before clearing browser data or changing phones.</p>
   <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="field" style="margin-top:10px"><label for="reviewMaterialGroup">Material group marked by the dot on the box</label><select id="reviewMaterialGroup"><option value="">Not confirmed — check the dot</option><option value="P">P — Steel</option><option value="M">M — Stainless steel</option><option value="K">K — Cast iron</option><option value="N">N — Non-ferrous metals (e.g. aluminium)</option><option value="S">S — Heat-resistant alloys / titanium</option><option value="H">H — Hardened steel</option></select><p class="note">Choose the column with the dot. The app does not guess if the dot position is unclear.</p></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
   <p class="warn" style="margin-top:10px">Universal lookup supports multiple brands. Search results open official-source-focused searches where possible; this version does not automatically import data from every supplier website. Verify exact product and cutting conditions before use.</p>
@@ -123,6 +150,22 @@ document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=
 function updateHomeStatus(){const saved=(()=>{try{return JSON.parse(localStorage.getItem('myMachiningCalculatorInventoryV1')||'[]')}catch(e){return []}})();const el=document.getElementById('homeInventoryStatus');if(el)el.textContent=saved.length?`${saved.length} insert record(s) saved on this phone. Open Insert inventory to review them.`:'Your workshop inventory starts empty. Add only the inserts your workshop uses.';}
 let operation='rough';
 const $=id=>document.getElementById(id);
+
+const themeKey='myMachiningCalculatorThemeV1';
+function applyTheme(theme){
+  const chosen=theme==='dark'?'dark':'light';
+  document.body.dataset.theme=chosen;
+  const selector=document.getElementById('themeSelect');
+  if(selector)selector.value=chosen;
+  try{localStorage.setItem(themeKey,chosen)}catch(e){}
+}
+(function initTheme(){
+  let saved='light';
+  try{saved=localStorage.getItem(themeKey)||'light'}catch(e){}
+  applyTheme(saved);
+})();
+document.getElementById('themeSelect').addEventListener('change',e=>applyTheme(e.target.value));
+
 const grades={
  'YG-1':[
   {id:'yg3115',name:'YG3115 — general steel',materials:['bright','mild','other'],vc:90,feed:0.16,desc:'YG-1 lists YG3115 as a first-choice grade for general steel applications.'},
@@ -159,7 +202,7 @@ function populateGrades(keep=true){
 }
 $('brand').addEventListener('change',()=>populateGrades(false));
 document.querySelectorAll('#operations button').forEach(b=>b.addEventListener('click',()=>{operation=b.dataset.op;document.querySelectorAll('#operations button').forEach(x=>x.classList.toggle('active',x===b));updateOperationFields();calculate()}));
-['material','diameter','remove','tool','grade','length','coolant','grooveWidth','threadPitch'].forEach(id=>$(id).addEventListener('input',calculate));
+['material','diameter','remove','tool','grade','length','coolant','grooveWidth','threadPitch','maxRpm'].forEach(id=>$(id).addEventListener('input',calculate));
 function updateOperationFields(){
  $('removeField').hidden=['groove','part','thread'].includes(operation);
  $('grooveWidthField').hidden=!['groove','part'].includes(operation);
@@ -402,6 +445,32 @@ function stopCameraScanner(){scanLoopActive=false;if(scanStream){scanStream.getT
 $('startCamera').addEventListener('click',startCameraScanner);
 $('stopCamera').addEventListener('click',stopCameraScanner);
 window.addEventListener('pagehide',stopCameraScanner);
+
+// Inventory backup and restore. Uses the existing local inventory key and merges by insert code.
+function downloadTextFile(filename, content, type='application/json'){
+  const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+const exportBtn=$('exportInventory');
+if(exportBtn)exportBtn.addEventListener('click',()=>{
+  const data=readInventory();
+  downloadTextFile('my-machining-inventory-backup.json',JSON.stringify({format:'my-machining-calculator-inventory',version:1,exportedAt:new Date().toISOString(),items:data},null,2));
+  $('scanFeedback').textContent='Inventory backup exported. Keep the JSON file somewhere safe.';
+});
+const importBtn=$('importInventoryButton'), importFile=$('importInventoryFile');
+if(importBtn&&importFile)importBtn.addEventListener('click',()=>importFile.click());
+if(importFile)importFile.addEventListener('change',async()=>{
+  const file=importFile.files&&importFile.files[0];if(!file)return;
+  try{
+    const parsed=JSON.parse(await file.text());const incoming=Array.isArray(parsed)?parsed:parsed.items;
+    if(!Array.isArray(incoming))throw new Error('Backup does not contain an insert list');
+    const valid=incoming.filter(x=>x&&typeof x.code==='string'&&x.code.trim()&&!/^https?:\/\//i.test(x.code));
+    const existing=readInventory(),seen=new Set(existing.map(x=>String(x.code).toLowerCase()));
+    const fresh=valid.filter(x=>!seen.has(String(x.code).toLowerCase()));
+    localStorage.setItem(inventoryKey,JSON.stringify(existing.concat(fresh)));
+    renderBatch();updateHomeStatus();$('scanFeedback').textContent='Backup imported: '+fresh.length+' new insert(s) added; duplicates and URL-only records skipped.';
+  }catch(e){$('scanFeedback').textContent='Could not import backup: '+e.message+'. Your existing inventory was not changed.';}
+  finally{importFile.value='';}
+});
 renderBatch();
 updateHomeStatus();
 showView('homeView');

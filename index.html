@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#172033">
 <meta name="description" content="Offline-first machining calculator and workshop insert inventory">
+<meta name="app-version" content="v13">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <title>My Machining Calculator</title>
@@ -29,7 +30,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
 .app-header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .theme-control{display:flex;align-items:center;gap:8px;min-width:150px}
 .theme-control label{margin:0;color:#c8d2e4;font-size:.82rem}
-.theme-control select{width:auto;min-width:120px;padding:8px 10px;border-radius:10px;background:#fff;color:#172033}
+.theme-control select{width:auto;min-width:120px;padding:8px 10px;border-radius:10px;background:#fff;color:#172033;color-scheme:light}
 body[data-theme="dark"]{background:#101722;color:#e7edf6}
 body[data-theme="dark"] header{background:#0b1019}
 body[data-theme="dark"] .panel,body[data-theme="dark"] .home-card{background:#1b2635;color:#e7edf6;box-shadow:0 2px 12px #0004}
@@ -47,7 +48,7 @@ body[data-theme="dark"] .warn{background:#49391c;color:#ffe8b2}
 body[data-theme="dark"] #scanReview{background:#20334d!important}
 body[data-theme="dark"] #batchList{color:#c4cfde}
 body[data-theme="dark"] a{color:#8fc5ff}
-body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;border-color:#435168}
+body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;border-color:#435168;color-scheme:dark} body[data-theme="dark"] option{background:#111a27;color:#e7edf6} body[data-theme="light"] option{background:#fff;color:#172033}
 @media(max-width:420px){.app-header{align-items:flex-start}.theme-control{width:100%;justify-content:flex-start}.theme-control select{flex:1}}
 
 @media(min-width:560px){main{padding:20px}.panel{padding:20px}}
@@ -74,6 +75,7 @@ body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;b
 </section>
 <div id="calcView" hidden>
 <section class="panel">
+  <div class="field"><label for="savedInsertSelect">Use saved insert (optional)</label><select id="savedInsertSelect"><option value="">Manual selection / generic profile</option></select><p class="note">Choose a saved insert to apply its manufacturer and grade where the calculator has a matching profile. Saved box data is not automatically treated as verified cutting data.</p></div>
   <div class="field"><label for="material">Material</label><select id="material">
     <option value="bright">Bright mild steel</option><option value="mild">Mild steel</option><option value="aluminium" selected>Aluminium</option><option value="stainless">Stainless steel</option><option value="cast">Cast iron</option><option value="other">Other (use steel starting values)</option>
   </select></div>
@@ -104,6 +106,9 @@ body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;b
   </div>
   <p class="note" id="toolnote" style="margin-bottom:0"></p>
   <div class="statusline" id="passPlan" aria-live="polite">Enter a diameter reduction to see a rough pass plan.</div>
+  <div class="segment" style="margin-top:10px"><button type="button" id="saveCuttingRecord">Save this setup to machining history</button><button type="button" id="exportCuttingHistory">Export history CSV</button></div>
+  <p class="note" id="historyStatus" aria-live="polite">Machining history is stored on this device only.</p>
+  <div id="cuttingHistoryList" class="note"></div>
 </section>
 </div>
 <div id="inventoryView" hidden>
@@ -160,8 +165,8 @@ function applyTheme(theme){
   try{localStorage.setItem(themeKey,chosen)}catch(e){}
 }
 (function initTheme(){
-  let saved='light';
-  try{saved=localStorage.getItem(themeKey)||'light'}catch(e){}
+  let saved='dark';
+  try{saved=localStorage.getItem(themeKey)||'dark'}catch(e){}
   applyTheme(saved);
 })();
 document.getElementById('themeSelect').addEventListener('change',e=>applyTheme(e.target.value));
@@ -209,6 +214,80 @@ function updateOperationFields(){
  $('threadPitchField').hidden=operation!=='thread';
 }
 
+
+const historyKey='myMachiningCalculatorCuttingHistoryV1';
+function readCuttingHistory(){try{return JSON.parse(localStorage.getItem(historyKey)||'[]')}catch(e){return []}}
+function csvCell(value){return '"'+String(value??'').replace(/"/g,'""')+'"'}
+function currentSetupSnapshot(){
+ return {
+  date:new Date().toISOString(),
+  material:$('material').selectedOptions[0]?.textContent||$('material').value,
+  operation:operation,
+  diameter:$('diameter').value,
+  removal:$('remove').value,
+  tool:$('tool').value,
+  brand:$('brand').value,
+  grade:$('grade').selectedOptions[0]?.textContent||$('grade').value,
+  rpm:$('rpm').textContent,
+  vc:$('vc').textContent,
+  feed:$('feed').textContent,
+  depth:$('depth').textContent,
+  finalDiameter:$('final').textContent,
+  length:$('length').value,
+  coolant:$('coolant').value,
+  maxRpm:$('maxRpm').value
+ };
+}
+function renderCuttingHistory(){
+ const el=$('cuttingHistoryList');if(!el)return;
+ const records=readCuttingHistory();el.innerHTML='';
+ if(!records.length){el.textContent='No saved machining setups yet.';return;}
+ const list=document.createElement('ol');list.style.paddingLeft='22px';
+ records.slice(0,20).forEach((r,i)=>{
+  const li=document.createElement('li');li.style.margin='8px 0';
+  li.textContent=new Date(r.date).toLocaleString()+' · '+r.material+' · '+r.operation+' · '+r.diameter+' mm · '+r.rpm+' · '+r.feed;
+  const del=document.createElement('button');del.type='button';del.textContent='Delete';del.style.marginLeft='8px';
+  del.addEventListener('click',()=>{const now=readCuttingHistory();now.splice(i,1);localStorage.setItem(historyKey,JSON.stringify(now));renderCuttingHistory();});
+  li.appendChild(del);list.appendChild(li);
+ });
+ el.appendChild(list);
+ if(records.length>20){const note=document.createElement('p');note.textContent='Showing latest 20 of '+records.length+' records. Export CSV to keep a full copy.';el.appendChild(note);}
+}
+function populateSavedInserts(){
+ const select=$('savedInsertSelect');if(!select)return;
+ const current=select.value;const saved=(()=>{try{return JSON.parse(localStorage.getItem('myMachiningCalculatorInventoryV1')||'[]')}catch(e){return []}})();
+ select.innerHTML='<option value="">Manual selection / generic profile</option>';
+ saved.forEach((item,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=(item.code||'Unknown code')+' · '+(item.brand||'Unknown')+(item.grade?' · '+item.grade:'');select.appendChild(o);});
+ if([...select.options].some(o=>o.value===current))select.value=current;
+}
+function applySavedInsert(){
+ const idx=$('savedInsertSelect').value;if(idx==='')return;
+ const saved=(()=>{try{return JSON.parse(localStorage.getItem('myMachiningCalculatorInventoryV1')||'[]')}catch(e){return []}})();
+ const item=saved[Number(idx)];if(!item)return;
+ const brandMap={'YG-1':'YG-1','ISCAR':'ISCAR','Kennametal':'Kennametal'};
+ if(brandMap[item.brand]){$('brand').value=brandMap[item.brand];populateGrades(false);}
+ const shape=String(item.shape||'').toUpperCase();
+ if(['WNMG','DNMG'].includes(shape))$('tool').value=shape;
+ const gradeText=String(item.grade||'').toLowerCase();
+ const options=[...$('grade').options];
+ const match=options.find(o=>o.value.toLowerCase()===gradeText||o.textContent.toLowerCase().includes(gradeText)&&gradeText.length>2);
+ if(match)$('grade').value=match.value;
+ $('toolnote').textContent='Saved insert selected: '+item.code+'. '+(item.dataStatus||'Check the box and manufacturer data before cutting.')+' Saved label ranges, if any, are not automatically treated as verified calculator settings.';
+ calculate();
+}
+$('savedInsertSelect').addEventListener('change',applySavedInsert);
+$('saveCuttingRecord').addEventListener('click',()=>{
+ const r=currentSetupSnapshot();if(!r.diameter||r.rpm==='Check input'){ $('historyStatus').textContent='Check the inputs before saving this setup.';return;}
+ const list=readCuttingHistory();list.unshift(r);localStorage.setItem(historyKey,JSON.stringify(list.slice(0,500)));
+ $('historyStatus').textContent='Setup saved locally at '+new Date(r.date).toLocaleString()+'.';renderCuttingHistory();
+});
+$('exportCuttingHistory').addEventListener('click',()=>{
+ const rows=readCuttingHistory();if(!rows.length){$('historyStatus').textContent='No history to export yet.';return;}
+ const keys=Object.keys(rows[0]);const csv=[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\r\n');
+ downloadTextFile('my-machining-history.csv',csv,'text/csv;charset=utf-8');
+ $('historyStatus').textContent='Exported '+rows.length+' history record(s) to CSV.';
+});
+
 function calculate(){
  const material=$('material').value, D=parseFloat($('diameter').value), reduction=parseFloat($('remove').value);
  const toolChoice=$('tool').value, brand=$('brand').value, gradeId=$('grade').value, coolant=$('coolant').value;
@@ -236,7 +315,7 @@ function calculate(){
  if(operation==='thread') {vc*=0.35;feed=parseFloat($('threadPitch').value)||1.5;}
  if(tool==='HSS'){vc=material==='aluminium'?45:material==='stainless'?12:20;feed=operation==='finish'?0.06:0.10;}
  if(coolant==='no'&&['stainless','aluminium'].includes(material)) vc*=0.85;
- const rpm=Math.round((vc*1000)/(Math.PI*D));
+ const theoreticalRpm=(vc*1000)/(Math.PI*D); const rpmLimit=parseFloat($('maxRpm').value); const rpm=Math.round(Number.isFinite(rpmLimit)&&rpmLimit>0?Math.min(theoreticalRpm,rpmLimit):theoreticalRpm);
  const effectiveRemoval=['groove','part','thread'].includes(operation)?0:reduction;
  const depth=effectiveRemoval/2, finalD=D-effectiveRemoval;
  const extra=operation==='groove'||operation==='part'?(' Enter groove/blade width: '+($('grooveWidth').value||'—')+' mm. Use insert-specific data; displayed feed is only a conservative estimate. '):operation==='thread'?(' Feed per revolution is set to the entered pitch ('+($('threadPitch').value||'—')+' mm). Threading RPM is a cautious estimate; use the thread insert maker’s pass schedule and depth data. '):operation==='id'?' ID boring may need reduced speed due to bar overhang and rigidity. ':'';
@@ -246,7 +325,7 @@ function calculate(){
  $('depth').textContent=depth.toFixed(2)+' mm';
  $('final').textContent=finalD.toFixed(2)+' mm';
  $('mmmin').textContent=Math.round(rpm*feed).toLocaleString()+' mm/min';
- $('toolnote').textContent='Selected: '+tool+' · '+brand+' · '+selected.name+'. '+extra+(operation==='face'?'Facing speed changes with diameter; slow down toward the centre. ':'')+(effectiveRemoval>2?'A '+effectiveRemoval.toFixed(2)+' mm diameter reduction is a '+depth.toFixed(2)+' mm radial cut; consider multiple passes if load, chatter or chip control is poor. ':'')+'Spindle speed is theoretical; choose a suitable available lathe speed at or below this value.';
+ $('toolnote').textContent='Selected: '+tool+' · '+brand+' · '+selected.name+'. '+extra+(operation==='face'?'Facing speed changes with diameter; slow down toward the centre. ':'')+(effectiveRemoval>2?'A '+effectiveRemoval.toFixed(2)+' mm diameter reduction is a '+depth.toFixed(2)+' mm radial cut; consider multiple passes if load, chatter or chip control is poor. ':'')+'Spindle speed is theoretical; choose a suitable available lathe speed at or below this value.'+(Number.isFinite(rpmLimit)&&rpmLimit>0&&theoreticalRpm>rpmLimit?' RPM limited by your entered machine cap of '+rpmLimit+' RPM.':'');
  $('gradeinfo').textContent=selected.desc+' Feed/depth limits are not universal for a grade: check the exact full insert code and maker data before taking a heavy cut.';
 }
 // Local-first workshop inventory and batch queue
@@ -259,7 +338,8 @@ function renderBatch(){
  $('batchList').innerHTML='';
  if(!scanBatch.length && !saved.length){$('batchList').textContent='No inserts added yet.';return;}
  if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.cuttingDataStatus?' · '+item.cuttingDataStatus:'')+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
- if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.grade?' · '+item.grade:'')+(item.dataStatus?' · '+item.dataStatus:'');if(item.sourceUrl){const a=document.createElement('a');a.href=item.sourceUrl;a.target='_blank';a.rel='noopener';a.textContent=' Source';li.appendChild(a)}ul.appendChild(li)});$('batchList').appendChild(ul)}
+ if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.style.margin='8px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.grade?' · '+item.grade:'')+(item.dataStatus?' · '+item.dataStatus:'');if(item.sourceUrl){const a=document.createElement('a');a.href=item.sourceUrl;a.target='_blank';a.rel='noopener';a.textContent=' Source';li.appendChild(a)}const del=document.createElement('button');del.type='button';del.textContent='Remove';del.style.marginLeft='8px';del.addEventListener('click',()=>{if(!confirm('Remove '+item.code+' from this phone? Export a backup first if you may need it later.'))return;const next=readInventory().filter(x=>String(x.code).toLowerCase()!==String(item.code).toLowerCase());localStorage.setItem(inventoryKey,JSON.stringify(next));renderBatch();updateHomeStatus();populateSavedInserts();});li.appendChild(del);ul.appendChild(li)});$('batchList').appendChild(ul)}
+ populateSavedInserts();
 }
 // Small verified/traceable starter catalogue. Online manufacturer pages are opened for deeper lookup;
 // this static GitHub Pages app cannot reliably scrape every manufacturer's site because of CORS/anti-bot limits.

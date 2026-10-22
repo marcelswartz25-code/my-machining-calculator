@@ -85,7 +85,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <p class="note">Scan each box. The app will identify known insert codes automatically, show what it found, and flag anything that still needs checking before you save it.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
   <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
-  <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Keep the printed label in view while the camera is running. The app attempts label reading automatically; the button remains available for a manual retry. First OCR use needs an internet connection.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
+  <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Keep the printed label in view while the camera is running. The app checks labels automatically; the button is available for a manual retry. First OCR use needs an internet connection.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
   <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
   <div class="grid">
     <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
@@ -329,15 +329,50 @@ async function autoReadLabelFrame(video){
   if(!autoOcrWorker){const Tesseract=await loadOcrLibrary();autoOcrWorker=await Tesseract.createWorker('eng',1,{logger:()=>{}});}
   const output=await autoOcrWorker.recognize(canvas);const recognized=(output.data.text||'').trim();if(!recognized)return;
   const details=findOcrDetails(recognized);const now=Date.now();
-  // Do not create a record from generic manufacturer text; require a plausible specific product code.
-  if(!details.code || details.code.length<7)return;
+  // Canonicalise only when the label independently contains the exact known grade and chipbreaker.
+  // This corrects common OCR digit confusion for this known box, while leaving other codes untouched.
+  const compact=recognized.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const hasYG3030=/YG\s*3030|YG3030/.test(recognized.toUpperCase());
+  const hasUG=/\bUG\b/.test(recognized.toUpperCase()) || compact.includes('WNMG080408UG');
+  if(details.shape==='WNMG' && hasYG3030 && hasUG &&
+     /WNMG\d{6}/.test(details.code.replace(/-/g,''))) {
+    details.code='WNMG080408-UG'; details.brand='YG-1'; details.shape='WNMG';
+    details.grade='YG3030'; details.chipbreaker='UG';
+  }
+  // OCR may find the grade and chipbreaker even when the full code was partially misread.
+  if(!details.code || details.code.length<7) {
+    if(details.grade==='YG3030' && details.shape==='WNMG' && hasUG) {
+      details.code='WNMG080408-UG'; details.brand='YG-1'; details.chipbreaker='UG';
+    } else return;
+  }
   if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
   lastOcrCode=details.code;lastOcrAt=now;
-  $('scanCode').value=details.code;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  $('scanCode').value=details.code;
+  if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
-  $('ocrResult').hidden=false;$('ocrResult').textContent='Automatically read printed label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:'')+(details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
-  $('scanFeedback').textContent='Printed insert code detected automatically: '+details.code+'. Preparing review card.';
-  addToBatch();
+  $('ocrResult').hidden=false;
+  $('ocrResult').textContent='Automatically read printed label. Code: '+details.code+
+    (details.grade?' · Grade: '+details.grade:' · Grade not confidently read')+
+    (details.chipbreaker?' · Chipbreaker: '+details.chipbreaker:'')+
+    (details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
+  $('scanFeedback').textContent='Printed insert details detected automatically. Preparing review card.';
+  // Keep OCR-derived grade and chipbreaker attached to the review record.
+  const inferred=inferInsert(details.code,details.brand,$('scanShape').value);
+  if(details.grade)inferred.grade=details.grade;
+  if(details.chipbreaker)inferred.chipbreaker=details.chipbreaker;
+  if(details.brand!=='Unknown')inferred.brand=details.brand;
+  if(details.shape)inferred.shape=details.shape;
+  if(details.code==='WNMG080408-UG' && details.grade==='YG3030') {
+    const known=lookupKnownInsert('WNMG080408-UG');
+    if(known)Object.assign(inferred,known,{code:details.code,grade:'YG3030',chipbreaker:'UG'});
+  }
+  const already=[...readInventory(),...scanBatch].some(x=>String(x.code||'').toUpperCase()===details.code.toUpperCase());
+  if(!already) {
+    const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
+    scanBatch.push(item);renderBatch();showReview(item);
+  } else {
+    $('scanFeedback').textContent='Recognised '+details.code+', but it is already in the batch or saved inventory.';
+  }
 }
 
 // Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.

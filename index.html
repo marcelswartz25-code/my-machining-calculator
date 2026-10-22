@@ -88,13 +88,13 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Keep the printed label in view while the camera is running. The app attempts label reading automatically; the button remains available for a manual retry. First OCR use needs an internet connection.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
   <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
   <div class="grid">
-    <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
+    <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Mitsubishi Materials</option><option>Seco</option><option>Tungaloy</option><option>Sumitomo</option><option>Walter</option><option>TaeguTec</option><option>Kyocera</option><option>Other</option></select></div>
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
   <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
-  <p class="warn" style="margin-top:10px">The camera scanner reads supported QR codes and barcodes. A code may contain only a product ID or URL, not cutting data. Unknown codes are saved for review; verify manufacturer data before using cutting settings.</p>
+  <p class="warn" style="margin-top:10px">Universal lookup supports multiple brands. Search results open official-source-focused searches where possible; this version does not automatically import data from every supplier website. Verify exact product and cutting conditions before use.</p>
 </section>
 </div>
 <div id="calcSafetyView" hidden>
@@ -251,6 +251,25 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus,manufacturerSearchUrl:manufacturerSearchUrl({brand,code,grade})};
 }
 let pendingReview=null;
+function openUniversalLookup(item){
+  const brand=String(item.brand||'').trim(), code=String(item.code||'').trim(), grade=String(item.grade||'').trim();
+  const product=[code,grade].filter(Boolean).join(' ');
+  const sites={
+    'YG-1':'site:yg1usa.com OR site:yg1.kr',
+    'Kennametal':'site:kennametal.com',
+    'ISCAR':'site:iscar.com',
+    'Sandvik Coromant':'site:sandvik.coromant.com',
+    'Mitsubishi Materials':'site:mmc-carbide.com',
+    'Seco':'site:secotools.com',
+    'Tungaloy':'site:tungaloy.com',
+    'Sumitomo':'site:sumitool.com',
+    'Walter':'site:walter-tools.com',
+    'TaeguTec':'site:taegutec.com',
+    'Kyocera':'site:kyocera.com'
+  };
+  const q=(sites[brand]?(sites[brand]+' '):'')+[brand,product,'cutting data insert'].filter(Boolean).join(' ');
+  window.open(item.sourceUrl||('https://www.google.com/search?q='+encodeURIComponent(q)),'_blank','noopener');
+}
 function showReview(item){
  pendingReview=item;$('scanReview').hidden=false;
  $('reviewTitle').textContent=item.confidence==='High'?'Insert identified — review before saving':'Insert details found — review before saving';
@@ -258,13 +277,12 @@ function showReview(item){
  if(item.dimensions)lines.push(`Cutting width: ${item.dimensions.cuttingWidthMm} mm`, `Corner radius: ${item.dimensions.cornerRadiusMm} mm`);
  if(item.labelData){const d=item.labelData;lines.push(`BOX LABEL — steel: Vc ${d.steel.vcMin}–${d.steel.vcMax} m/min; feed ${d.steel.feedMin}–${d.steel.feedMax} mm/rev; depth ${d.steel.apMin}–${d.steel.apMax} mm`, `BOX LABEL — stainless: Vc ${d.stainless.vcMin}–${d.stainless.vcMax} m/min; feed ${d.stainless.feedMin}–${d.stainless.feedMax} mm/rev; depth ${d.stainless.apMin}–${d.stainless.apMax} mm`);}
  $('reviewDetails').textContent=lines.join('\n');$('reviewDetails').style.whiteSpace='pre-line';
- const lookup=$('manufacturerLookup');lookup.onclick=()=>window.open(item.sourceUrl||item.manufacturerSearchUrl||manufacturerSearchUrl(item),'_blank','noopener');
- lookup.textContent=item.sourceUrl?'Open product/catalogue source':'Search manufacturer online';
+ const lookup=$('manufacturerLookup');lookup.onclick=()=>openUniversalLookup(item);lookup.textContent='Search manufacturer sources';
 }
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
  const inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
-  if(/^https?:\/\//i.test(code)){$('scanFeedback').textContent='Manufacturer URL ignored: scan or enter the printed insert product code instead.';$('scanCode').value='';return;}
+  if(/^https?:\/\//i.test(code)){$('scanFeedback').textContent='Manufacturer URL ignored: scan or enter the printed product code instead.';$('scanCode').value='';return;}
  if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='QR link detected, but it is not an insert identity. The app will keep reading the printed label; no inventory item was added.';$('cameraStatus').textContent='Manufacturer homepage QR ignored. Hold the printed product label in view for automatic text recognition.';$('scanCode').value='';return;}
  const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='This insert code is already in the batch or saved inventory: '+code;$('scanCode').value='';return;}
  const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
@@ -286,25 +304,16 @@ function loadOcrLibrary(){
  return ocrLibraryPromise;
 }
 function findOcrDetails(text){
-  const upper=String(text||'').toUpperCase().replace(/[|]/g,'I');
-  const compact=upper.replace(/[^A-Z0-9]/g,'');
-  const brands=[[/YG\s?-?\s?1|YG1|MADE IN KOREA/i,'YG-1'],[/KENNAMETAL/i,'Kennametal'],[/ISCAR/i,'ISCAR'],[/SANDVIK/i,'Sandvik Coromant']];
-  let brand='Unknown';for(const [re,name] of brands){if(re.test(text)){brand=name;break;}}
-  const shapeMatch=upper.match(/\b(WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\b/);
-  const gradeMatch=upper.match(/\b(?:YG\s?3\s?0\s?3\s?0|YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4}|GC\s?\d{3,4}|CP\s?\d{3,4})\b/);
-  const chipMatch=upper.match(/\b(?:UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)\b/);
-  const candidates=[];
-  const lineList=upper.split(/\n+/).map(s=>s.trim()).filter(Boolean);
-  const codeRe=/\b(?:WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\s*[-/]?\s*\d{3,6}\s*[-/]?\s*(?:UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)?\s*[-/]?\s*(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4})?\b/g;
-  for(const line of lineList) for(const m of line.matchAll(codeRe)) candidates.push(m[0].replace(/[\s/]+/g,''));
-  const knownLabel=/WNMG/.test(compact) && /UG/.test(compact) && /YG3030|YG3O3O|YG3O30|YG30 30/.test(upper.replace(/\s+/g,'')) && /MADE IN KOREA|YG-?1|YG1/.test(upper);
-  const plausibleKnown=/WNMG0[48]0[148]0?8?/.test(compact);
-  let code='';
-  if(knownLabel && plausibleKnown) code='WNMG080408-UG';
-  if(!code && candidates.length) code=candidates.sort((a,b)=>b.length-a.length)[0];
-  if(!code){const m=compact.match(/(WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)(\d{6})/);if(m)code=m[1]+m[2];}
-  const grade=gradeMatch?gradeMatch[0].replace(/\s+/g,'').replace(/O/g,'0'):'';
-  return {code,grade,brand,shape:shapeMatch?shapeMatch[0]:'',chipbreaker:chipMatch?chipMatch[0]:''};
+ const upper=text.toUpperCase().replace(/[|]/g,'I');
+ const codePatterns=[/\b(?:WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\s?\d{6}\s?[-/]?\s?(?:UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)?\s?[-/]?\s?(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4})?\b/g, /\b[A-Z]{1,3}\s?\d{2,4}\s?\d{2,4}\s?[-/]\s?[A-Z0-9]{1,5}\b/g, /\b[A-Z]\d{4,8}[A-Z0-9-]{0,8}\b/g];
+ let code='';
+ for(const pattern of codePatterns){const found=upper.match(pattern);if(found){code=found.map(x=>x.replace(/\s+/g,'')).sort((a,b)=>b.length-a.length)[0];break;}}
+ const gradeMatch=upper.match(/\b(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4}|GC\s?\d{3,4}|CP\s?\d{3,4})\b/);
+ const brands=[[/YG\s?-?\s?1|YG1|MADE IN KOREA/i,'YG-1'],[/KENNAMETAL/i,'Kennametal'],[/ISCAR/i,'ISCAR'],[/SANDVIK/i,'Sandvik Coromant']];
+ let brand='Unknown';for(const [re,name] of brands){if(re.test(text)){brand=name;break;}}
+ const shapeMatch=upper.match(/\b(WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\b/);
+ const chipMatch=upper.match(/\b(?:-\s*)?(UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)\b/);
+ return {code,grade:gradeMatch?gradeMatch[0].replace(/\s+/g,''):'',brand,shape:shapeMatch?shapeMatch[0]:'',chipbreaker:chipMatch?chipMatch[1]:''};
 }
 async function readPrintedLabel(){
  const result=$('ocrResult');result.hidden=false;
@@ -339,34 +348,15 @@ async function autoReadLabelFrame(video){
   if(!autoOcrWorker){const Tesseract=await loadOcrLibrary();autoOcrWorker=await Tesseract.createWorker('eng',1,{logger:()=>{}});}
   const output=await autoOcrWorker.recognize(canvas);const recognized=(output.data.text||'').trim();if(!recognized)return;
   const details=findOcrDetails(recognized);const now=Date.now();
-  if(!details.code || details.code.length<7) {
-    $('ocrResult').hidden=false;
-    $('ocrResult').textContent='Label text detected, but the insert code is not clear enough yet. Move closer or use manual review. OCR saw: '+recognized.slice(0,180);
-    return;
-  }
+  // Do not create a record from generic manufacturer text; require a plausible specific product code.
+  if(!details.code || details.code.length<7)return;
   if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
   lastOcrCode=details.code;lastOcrAt=now;
-  $('scanCode').value=details.code;
-  if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  $('scanCode').value=details.code;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
-  $('ocrResult').hidden=false;
-  $('ocrResult').textContent='Automatically read label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:' · Grade not confidently read')+(details.chipbreaker?' · Chipbreaker: '+details.chipbreaker:'')+(details.brand!=='Unknown'?' · Manufacturer: '+details.brand:'')+'. Review before saving.';
-  const inferred=inferInsert(details.code,details.brand,$('scanShape').value);
-  if(details.grade)inferred.grade=details.grade;
-  if(details.chipbreaker)inferred.chipbreaker=details.chipbreaker;
-  if(details.brand!=='Unknown')inferred.brand=details.brand;
-  if(details.shape)inferred.shape=details.shape;
-  if(details.code==='WNMG080408-UG' && details.grade==='YG3030') {
-    const known=lookupKnownInsert('WNMG080408-UG');
-    if(known)Object.assign(inferred,known,{code:details.code,grade:'YG3030',chipbreaker:'UG'});
-  }
-  const duplicate=[...readInventory(),...scanBatch].some(x=>String(x.code||'').toUpperCase()===details.code.toUpperCase());
-  if(!duplicate) {
-    const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
-    scanBatch.push(item);renderBatch();showReview(item);
-    $('scanFeedback').textContent='Printed insert details detected automatically. Review the card before saving.';
-  } else $('scanFeedback').textContent='Recognised '+details.code+', but it is already in the batch or saved inventory.';
-
+  $('ocrResult').hidden=false;$('ocrResult').textContent='Automatically read printed label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:'')+(details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
+  $('scanFeedback').textContent='Printed insert code detected automatically: '+details.code+'. Preparing review card.';
+  addToBatch();
 }
 
 // Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.

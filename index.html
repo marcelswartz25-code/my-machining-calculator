@@ -82,7 +82,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
 <div id="inventoryView" hidden>
 <section class="panel" id="inventoryPanel">
   <h2 style="font-size:1.1rem;margin:0 0 8px">Workshop insert inventory</h2>
-  <p class="note">Start with an empty list. Add codes as you scan or read the boxes; review the batch and save the inserts to this phone.</p>
+  <p class="note">Scan each box. The app will identify known insert codes automatically, show what it found, and flag anything that still needs checking before you save it.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
   <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
   <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
@@ -91,7 +91,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
-  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p>
+  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
   <p class="warn" style="margin-top:10px">The camera scanner reads supported QR codes and barcodes. A code may contain only a product ID or URL, not cutting data. Unknown codes are saved for review; verify manufacturer data before using cutting settings.</p>
 </section>
@@ -216,7 +216,45 @@ function renderBatch(){
  if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.cuttingDataStatus?' · '+item.cuttingDataStatus:'')+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
  if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape;ul.appendChild(li)});$('batchList').appendChild(ul)}
 }
-function addToBatch(){const code=$('scanCode').value.trim();if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}const all=[...readInventory(),...scanBatch];if(all.some(x=>x.code.toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='Duplicate detected; this code was not added again: '+code;$('scanCode').value='';return;}let brand=$('scanBrand').value;const lower=code.toLowerCase();if(brand==='Unknown' && lower.includes('yg1.co.kr'))brand='YG-1';else if(brand==='Unknown'&&lower.includes('iscar.com'))brand='ISCAR';else if(brand==='Unknown'&&lower.includes('kennametal.com'))brand='Kennametal';$('scanBrand').value=brand;const item={code,brand,shape:$('scanShape').value,grade:'',chipbreaker:'',operation:'',materials:[],cuttingDataStatus: /^https?:\/\//i.test(code)?'Product data not retrieved — scanned URL only':'Code captured; product details need confirmation',addedAt:new Date().toISOString()};scanBatch.push(item);$('scanCode').value='';renderBatch();$('scanFeedback').textContent='Captured and added to current batch: '+code+'. '+item.cuttingDataStatus+'. Not saved to inventory until you tap Save batch.';$('scanCode').focus()}
+function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
+ const code=String(raw||'').trim(); const low=code.toLowerCase();
+ let brand=selectedBrand, shape=selectedShape, grade='', chipbreaker='', operation='', materials=[], confidence='Needs review', dataStatus='Code captured; manufacturer data not retrieved';
+ if(/yg1\.co\.kr|yg-1\.co\.kr/.test(low)){brand='YG-1';return {code,brand,shape:'Unknown',grade:'',chipbreaker:'',operation:'',materials:[],confidence:'Low',dataStatus:'Manufacturer homepage only — scan the printed product label or product barcode'};}
+ if(/iscar\.com/.test(low)){brand='ISCAR';return {code,brand,shape:'Unknown',grade:'',chipbreaker:'',operation:'',materials:[],confidence:'Low',dataStatus:'Manufacturer website link only — scan the printed product label or product barcode'};}
+ if(/kennametal\.com/.test(low)){brand='Kennametal';return {code,brand,shape:'Unknown',grade:'',chipbreaker:'',operation:'',materials:[],confidence:'Low',dataStatus:'Manufacturer website link only — scan the printed product label or product barcode'};}
+ if(/sandvikcoromant|sandvik\.com/.test(low)){brand='Sandvik Coromant';return {code,brand,shape:'Unknown',grade:'',chipbreaker:'',operation:'',materials:[],confidence:'Low',dataStatus:'Manufacturer website link only — scan the printed product label or product barcode'};}
+ const normalized=code.toUpperCase().replace(/[\s_]/g,'');
+ const shapeMatch=normalized.match(/^(WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|DCMT|CCMT|TCMT|TPMT|VCMT|APKT|SEKT|SPMG|GTN|MGMN|A2|N123|16ER|16IR|11ER|11IR)/);
+ if(shapeMatch){shape=shapeMatch[1];confidence='Partial';}
+ const knownYG=normalized.match(/^(WNMG\d{6})[-/]?(UG|PM|GM|TM|UM|AM)?[-/]?(YG\d{4})?$/);
+ if(knownYG){shape=knownYG[1].slice(0,4);brand='YG-1';chipbreaker=knownYG[2]||'';grade=knownYG[3]||'';materials=['Steel'];confidence='Partial';dataStatus='Insert code parsed; confirm exact label and retrieve official cutting data';}
+ const gradeMatch=normalized.match(/(?:YG\d{4}|KC\d{4}|IC\d{4}|KCP\d{3}[A-Z]?|KCU\d{3}[A-Z]?)/);
+ if(gradeMatch)grade=gradeMatch[0];
+ if(/A2022N00CF02/.test(normalized)){brand='Kennametal';shape='Parting';grade='KC5025';operation='Parting-off';confidence='High';dataStatus='Recognized from workshop label photo; cutting data still needs manufacturer verification';}
+ if(/WNMG080408UGYG3030/.test(normalized)||(/WNMG080408/.test(normalized)&&/YG3030/.test(normalized))){brand='YG-1';shape='WNMG';grade='YG3030';chipbreaker='UG';operation='OD turning';materials=['Steel','Stainless steel'];confidence='High';dataStatus='Recognized from workshop label photo; use the box ranges as guidance and verify before cutting';}
+ if(brand==='Unknown'||brand==='unknown'){
+  if(/yg-?1|yg\d{4}/i.test(code))brand='YG-1'; else if(/iscar|ic\d{4}/i.test(code))brand='ISCAR'; else if(/kennametal|kc\d{4}|kcp|kcu/i.test(code))brand='Kennametal';
+ }
+ if(shape==='Parting'||shape==='Grooving'||/^GTN|^MGMN|^N123/.test(normalized))operation=shape==='Parting'?'Parting-off':'Grooving';
+ if(shape==='Threading'||/^(16ER|16IR|11ER|11IR)/.test(normalized))operation='Threading';
+ if(shape!=='Unknown'&&shape!=='Other'&&confidence==='Needs review')confidence='Partial';
+ return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus};
+}
+let pendingReview=null;
+function showReview(item){pendingReview=item;$('scanReview').hidden=false;$('reviewTitle').textContent=item.confidence==='High'?'Insert identified — review before saving':'Scan received — some details need checking';const lines=[`Code: ${item.code}`,`Manufacturer: ${item.brand}`,`Insert type: ${item.shape}`,`Grade: ${item.grade||'Not identified'}`,`Chipbreaker: ${item.chipbreaker||'Not identified'}`,`Operation: ${item.operation||'Not identified'}`,`Status: ${item.dataStatus}`];$('reviewDetails').textContent=lines.join(' · ');}
+function addToBatch(){
+ const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
+ const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='Duplicate detected; this code was not added again: '+code;$('scanCode').value='';return;}
+ const inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
+ if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='Scanned a manufacturer website, not a specific insert. '+inferred.dataStatus;$('cameraStatus').textContent='Homepage link detected. Scan the printed product barcode or type the insert code.';$('scanCode').value='';return;}
+ const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
+ if(item.brand!=='Unknown')$('scanBrand').value=item.brand;
+ if(item.shape!=='Unknown')$('scanShape').value=item.shape;
+ scanBatch.push(item); $('scanCode').value=''; renderBatch(); showReview(item);
+ $('scanFeedback').textContent='Captured: '+item.code+'. '+item.dataStatus+'. Review the details below; it is not saved until you choose Save & scan next.';
+}
+$('reviewSave').addEventListener('click',()=>{if(!pendingReview)return;const saved=readInventory();if(saved.some(x=>String(x.code).toLowerCase()===pendingReview.code.toLowerCase())){$('reviewDetails').textContent='This code is already saved. Duplicate skipped.';}else{try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat([pendingReview])));scanBatch=scanBatch.filter(x=>String(x.code).toLowerCase()!==pendingReview.code.toLowerCase());$('scanFeedback').textContent='Saved '+pendingReview.code+' to this phone. Ready for the next box.';pendingReview=null;$('scanReview').hidden=true;renderBatch();updateHomeStatus();$('scanCode').focus();}catch(e){$('scanFeedback').textContent='Could not save. Check phone storage settings.';}}});
+$('reviewDismiss').addEventListener('click',()=>{$('scanReview').hidden=true;pendingReview=null;$('scanFeedback').textContent='Review closed. Any item already in the batch remains there until saved or removed.';});
 $('addScan').addEventListener('click',addToBatch);
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
 $('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';$('scanFeedback').textContent='Saved '+fresh.length+' insert record(s) locally. Any URL-only scans still need product identification and verified cutting data.';updateHomeStatus();}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
@@ -233,11 +271,11 @@ async function startCameraScanner(){
   const detector=new BarcodeDetector({formats:formats.length?formats:['qr_code']});
   scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
   video.srcObject=scanStream; await video.play(); $('cameraWrap').hidden=false; $('startCamera').disabled=true; $('stopCamera').disabled=false; scanLoopActive=true;
-  $('cameraStatus').textContent='Scanner running. Hold each box steady until it is added; keep moving to the next box.';
+  $('cameraStatus').textContent='Scanner running. Hold each code steady; review the result before saving and moving on.';
   const tick=async()=>{
    if(!scanLoopActive)return;
    try{
-    if(video.readyState>=2){const codes=await detector.detect(video);if(codes.length){const raw=(codes[0].rawValue||'').trim();const now=Date.now();if(raw && (raw!==lastDetectedCode||now-lastDetectedAt>1800)){lastDetectedCode=raw;lastDetectedAt=now;$('scanCode').value=raw;addToBatch();$('cameraStatus').textContent='Captured: '+raw+' · continue to the next box.';}}}
+    if(video.readyState>=2){const codes=await detector.detect(video);if(codes.length){const raw=(codes[0].rawValue||'').trim();const now=Date.now();if(raw && (raw!==lastDetectedCode||now-lastDetectedAt>1800)){lastDetectedCode=raw;lastDetectedAt=now;$('scanCode').value=raw;addToBatch();$('cameraStatus').textContent='Code detected. Review the result below before saving.';}}}
    }catch(e){}
    if(scanLoopActive)requestAnimationFrame(tick);
   };

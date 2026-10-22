@@ -85,6 +85,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <p class="note">Scan each box. The app will identify known insert codes automatically, show what it found, and flag anything that still needs checking before you save it.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
   <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
+  <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Point the camera at the printed label, hold it steady, then tap Read printed label. Text recognition needs an internet connection the first time.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
   <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
   <div class="grid">
     <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
@@ -258,6 +259,50 @@ $('reviewDismiss').addEventListener('click',()=>{$('scanReview').hidden=true;pen
 $('addScan').addEventListener('click',addToBatch);
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
 $('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';$('scanFeedback').textContent='Saved '+fresh.length+' insert record(s) locally. Any URL-only scans still need product identification and verified cutting data.';updateHomeStatus();}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
+// Printed-label OCR: loads Tesseract.js on demand, then reads a still frame from the live camera.
+let ocrLibraryPromise=null;
+function loadOcrLibrary(){
+ if(window.Tesseract)return Promise.resolve(window.Tesseract);
+ if(!ocrLibraryPromise)ocrLibraryPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR library did not start'));script.onerror=()=>reject(new Error('Could not load text recognition. Connect to the internet and try again.'));document.head.appendChild(script);});
+ return ocrLibraryPromise;
+}
+function findOcrDetails(text){
+ const upper=text.toUpperCase().replace(/[|]/g,'I');
+ const codePatterns=[/\b[A-Z]{1,3}\s?\d{2,4}\s?\d{2,4}\s?[-/]\s?[A-Z0-9]{1,5}\b/g, /\b[A-Z]\d{4,8}[A-Z0-9-]{0,8}\b/g];
+ let code='';
+ for(const pattern of codePatterns){const found=upper.match(pattern);if(found){code=found.map(x=>x.replace(/\s+/g,'')).sort((a,b)=>b.length-a.length)[0];break;}}
+ const gradeMatch=upper.match(/\b(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4}|GC\s?\d{3,4}|CP\s?\d{3,4})\b/);
+ const brands=[[/YG\s?-?\s?1|YG1|MADE IN KOREA/i,'YG-1'],[/KENNAMETAL/i,'Kennametal'],[/ISCAR/i,'ISCAR'],[/SANDVIK/i,'Sandvik Coromant']];
+ let brand='Unknown';for(const [re,name] of brands){if(re.test(text)){brand=name;break;}}
+ const shapeMatch=upper.match(/\b(WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\b/);
+ const chipMatch=upper.match(/\b(?:-\s*)?(UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)\b/);
+ return {code,grade:gradeMatch?gradeMatch[0].replace(/\s+/g,''):'',brand,shape:shapeMatch?shapeMatch[0]:'',chipbreaker:chipMatch?chipMatch[1]:''};
+}
+async function readPrintedLabel(){
+ const result=$('ocrResult');result.hidden=false;
+ const video=$('scanVideo');
+ if(!scanStream||!video.videoWidth){result.textContent='Start the camera scanner first, then point it at the printed label.';return;}
+ const button=$('readLabel');button.disabled=true;result.textContent='Reading label… keep the box steady. This may take a few seconds.';
+ try{
+  const canvas=$('ocrCanvas');const maxWidth=1500;const scale=Math.min(1,maxWidth/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
+  const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0,canvas.width,canvas.height);
+  const Tesseract=await loadOcrLibrary();
+  const worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status&&m.progress!==undefined)result.textContent='Reading label: '+m.status+' '+Math.round(m.progress*100)+'%';}});
+  let recognized='';try{const output=await worker.recognize(canvas);recognized=(output.data.text||'').trim();}finally{await worker.terminate();}
+  if(!recognized){result.textContent='No readable text found. Move closer, improve the light, and try again.';return;}
+  const details=findOcrDetails(recognized);
+  if(details.code){$('scanCode').value=details.code;}
+  if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
+  let summary='Text read from label. '+(details.code?'Possible insert code: '+details.code+'. ':'No reliable insert code found. ')+(details.grade?'Grade: '+details.grade+'. ':'')+(details.brand!=='Unknown'?'Manufacturer: '+details.brand+'. ':'')+(details.chipbreaker?'Possible chipbreaker: '+details.chipbreaker+'. ':'');
+  result.textContent=summary+'Review the recognized text below; OCR results can be wrong.';
+  $('scanFeedback').textContent='OCR finished. Check the code field and correct it before tapping Add to batch.';
+  let textBox=$('ocrTextOutput');if(!textBox){textBox=document.createElement('details');textBox.id='ocrTextOutput';textBox.style.margin='8px 0';const summaryEl=document.createElement('summary');summaryEl.textContent='Show all text read from label';const pre=document.createElement('pre');pre.style.whiteSpace='pre-wrap';pre.style.fontSize='.8rem';pre.style.overflowWrap='anywhere';pre.textContent=recognized;textBox.append(summaryEl,pre);result.appendChild(textBox);}else{textBox.querySelector('pre').textContent=recognized;}
+ }catch(e){result.textContent='Could not read label: '+(e&&e.message?e.message:'unknown error')+'. QR scanning still works; enter the printed insert code manually if needed.';}
+ finally{button.disabled=false;}
+}
+$('readLabel').addEventListener('click',readPrintedLabel);
+
 // Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.
 let scanStream=null, scanLoopActive=false, lastDetectedCode='', lastDetectedAt=0;
 async function startCameraScanner(){

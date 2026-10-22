@@ -92,7 +92,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
-  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
+  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
   <p class="warn" style="margin-top:10px">The camera scanner reads supported QR codes and barcodes. A code may contain only a product ID or URL, not cutting data. Unknown codes are saved for review; verify manufacturer data before using cutting settings.</p>
 </section>
@@ -215,8 +215,16 @@ function renderBatch(){
  $('batchList').innerHTML='';
  if(!scanBatch.length && !saved.length){$('batchList').textContent='No inserts added yet.';return;}
  if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.cuttingDataStatus?' · '+item.cuttingDataStatus:'')+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
- if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape;ul.appendChild(li)});$('batchList').appendChild(ul)}
+ if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.grade?' · '+item.grade:'')+(item.dataStatus?' · '+item.dataStatus:'');if(item.sourceUrl){const a=document.createElement('a');a.href=item.sourceUrl;a.target='_blank';a.rel='noopener';a.textContent=' Source';li.appendChild(a)}ul.appendChild(li)});$('batchList').appendChild(ul)}
 }
+// Small verified/traceable starter catalogue. Online manufacturer pages are opened for deeper lookup;
+// this static GitHub Pages app cannot reliably scrape every manufacturer's site because of CORS/anti-bot limits.
+const insertCatalogue = [
+ {match:/WNMG080408[-/]?UG(?:[-/]?YG3030)?|WNMG080408UGYG3030/i,code:'WNMG080408-UG',brand:'YG-1',shape:'WNMG',grade:'YG3030',chipbreaker:'UG',operation:'OD turning',materials:['Steel','Stainless steel'],confidence:'Partial',dataStatus:'Exact grade/chipbreaker needs confirmation against the official catalogue. The broad speed/feed/depth ranges are from your box label, not independently verified online.',labelData:{steel:{vcMin:70,vcMax:350,feedMin:0.20,feedMax:0.40,apMin:1,apMax:3},stainless:{vcMin:50,vcMax:220,feedMin:0.20,feedMax:0.40,apMin:1,apMax:3}},sourceName:'YG-1 official insert catalogue (near match; grade/geometry combination must be confirmed)',sourceUrl:'https://yg1usa.com/feature/item_view.asp?cat_id=6&disp=0&sub_id=114&sub_sub_id=1513'},
+ {match:/A2022N00CF02/i,code:'A2022N00CF02',brand:'Kennametal',shape:'Parting',grade:'KC5025',chipbreaker:'CF',operation:'Parting-off',materials:['Steel','Stainless steel','High-temperature alloys','Titanium','Cast iron','Non-ferrous (check application)'],confidence:'High',dimensions:{cuttingWidthMm:2.2,cornerRadiusMm:0.2},dataStatus:'Product dimensions and grade match a supplier listing. Use the official Kennametal catalogue to verify application-specific cutting conditions.',sourceName:'Kennametal A2 cut-off catalogue / product listing',sourceUrl:'https://www.k2esa.com.au/wp-content/uploads/2019/03/kennametal-401-800.pdf'}
+];
+function lookupKnownInsert(raw){const text=String(raw||'').toUpperCase().replace(/[\s_]/g,'');return insertCatalogue.find(x=>x.match.test(text))||null;}
+function manufacturerSearchUrl(item){const q=encodeURIComponent((item.brand||'')+' '+(item.code||'')+' '+(item.grade||''));if(item.brand==='YG-1')return 'https://www.google.com/search?q=site%3Ayg1usa.com+OR+site%3Ayg1.kr+'+q;if(item.brand==='Kennametal')return 'https://www.google.com/search?q=site%3Akennametal.com+'+q;return 'https://www.google.com/search?q='+q;}
 function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  const code=String(raw||'').trim(); const low=code.toLowerCase();
  let brand=selectedBrand, shape=selectedShape, grade='', chipbreaker='', operation='', materials=[], confidence='Needs review', dataStatus='Code captured; manufacturer data not retrieved';
@@ -239,10 +247,20 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  if(shape==='Parting'||shape==='Grooving'||/^GTN|^MGMN|^N123/.test(normalized))operation=shape==='Parting'?'Parting-off':'Grooving';
  if(shape==='Threading'||/^(16ER|16IR|11ER|11IR)/.test(normalized))operation='Threading';
  if(shape!=='Unknown'&&shape!=='Other'&&confidence==='Needs review')confidence='Partial';
- return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus};
+ const catalogue=lookupKnownInsert(code); if(catalogue){brand=catalogue.brand;shape=catalogue.shape;grade=catalogue.grade;chipbreaker=catalogue.chipbreaker;operation=catalogue.operation;materials=catalogue.materials;confidence=catalogue.confidence;dataStatus=catalogue.dataStatus;return {...catalogue,code:catalogue.code,sourceUrl:catalogue.sourceUrl,sourceName:catalogue.sourceName,manufacturerSearchUrl:manufacturerSearchUrl(catalogue)};}
+ return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus,manufacturerSearchUrl:manufacturerSearchUrl({brand,code,grade})};
 }
 let pendingReview=null;
-function showReview(item){pendingReview=item;$('scanReview').hidden=false;$('reviewTitle').textContent=item.confidence==='High'?'Insert identified — review before saving':'Scan received — some details need checking';const lines=[`Code: ${item.code}`,`Manufacturer: ${item.brand}`,`Insert type: ${item.shape}`,`Grade: ${item.grade||'Not identified'}`,`Chipbreaker: ${item.chipbreaker||'Not identified'}`,`Operation: ${item.operation||'Not identified'}`,`Status: ${item.dataStatus}`];$('reviewDetails').textContent=lines.join(' · ');}
+function showReview(item){
+ pendingReview=item;$('scanReview').hidden=false;
+ $('reviewTitle').textContent=item.confidence==='High'?'Insert identified — review before saving':'Insert details found — review before saving';
+ const lines=[`Insert code: ${item.code}`,`Manufacturer: ${item.brand}`,`Shape / type: ${item.shape}`,`Grade: ${item.grade||'Not identified'}`,`Chipbreaker: ${item.chipbreaker||'Not identified'}`,`Operation: ${item.operation||'Not identified'}`,`Materials: ${(item.materials||[]).join(', ')||'Not identified'}`,`Data status: ${item.dataStatus}`];
+ if(item.dimensions)lines.push(`Cutting width: ${item.dimensions.cuttingWidthMm} mm`, `Corner radius: ${item.dimensions.cornerRadiusMm} mm`);
+ if(item.labelData){const d=item.labelData;lines.push(`BOX LABEL — steel: Vc ${d.steel.vcMin}–${d.steel.vcMax} m/min; feed ${d.steel.feedMin}–${d.steel.feedMax} mm/rev; depth ${d.steel.apMin}–${d.steel.apMax} mm`, `BOX LABEL — stainless: Vc ${d.stainless.vcMin}–${d.stainless.vcMax} m/min; feed ${d.stainless.feedMin}–${d.stainless.feedMax} mm/rev; depth ${d.stainless.apMin}–${d.stainless.apMax} mm`);}
+ $('reviewDetails').textContent=lines.join('\n');$('reviewDetails').style.whiteSpace='pre-line';
+ const lookup=$('manufacturerLookup');lookup.onclick=()=>window.open(item.sourceUrl||item.manufacturerSearchUrl||manufacturerSearchUrl(item),'_blank','noopener');
+ lookup.textContent=item.sourceUrl?'Open product/catalogue source':'Search manufacturer online';
+}
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
  const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='Duplicate detected; this code was not added again: '+code;$('scanCode').value='';return;}

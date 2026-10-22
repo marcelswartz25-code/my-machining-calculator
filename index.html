@@ -1,3 +1,4 @@
+```
 <!doctype html>
 <html lang="en">
 <head>
@@ -92,7 +93,7 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
-  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
+  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="field" style="margin-top:10px"><label for="reviewMaterialGroup">Material group marked by the dot on the box</label><select id="reviewMaterialGroup"><option value="">Not confirmed — check the dot</option><option value="P">P — Steel</option><option value="M">M — Stainless steel</option><option value="K">K — Cast iron</option><option value="N">N — Non-ferrous metals (e.g. aluminium)</option><option value="S">S — Heat-resistant alloys / titanium</option><option value="H">H — Hardened steel</option></select><p class="note">Choose the column with the dot. The app does not guess if the dot position is unclear.</p></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
   <p class="warn" style="margin-top:10px">Universal lookup supports multiple brands. Search results open official-source-focused searches where possible; this version does not automatically import data from every supplier website. Verify exact product and cutting conditions before use.</p>
 </section>
@@ -208,16 +209,7 @@ function calculate(){
 // Local-first workshop inventory and batch queue
 const inventoryKey='myMachiningCalculatorInventoryV1';
 let scanBatch=[];
-function readInventory(){
-  try{
-    const saved=JSON.parse(localStorage.getItem(inventoryKey)||'[]');
-    if(!Array.isArray(saved))return [];
-    // Remove old QR/homepage URL records from earlier versions.
-    const clean=saved.filter(item=>!/^https?:\/\//i.test(String(item&&item.code||'').trim()));
-    if(clean.length!==saved.length)localStorage.setItem(inventoryKey,JSON.stringify(clean));
-    return clean;
-  }catch(e){return []}
-}
+function readInventory(){try{return JSON.parse(localStorage.getItem(inventoryKey)||'[]')}catch(e){return []}}
 function renderBatch(){
  const saved=readInventory();
  $('batchStatus').textContent=scanBatch.length+' items in current batch · '+saved.length+' saved inserts';
@@ -251,7 +243,7 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  if(/A2022N00CF02/.test(normalized)){brand='Kennametal';shape='Parting';grade='KC5025';operation='Parting-off';confidence='High';dataStatus='Recognized from workshop label photo; cutting data still needs manufacturer verification';}
  if(/WNMG080408UGYG3030/.test(normalized)||(/WNMG080408/.test(normalized)&&/YG3030/.test(normalized))){brand='YG-1';shape='WNMG';grade='YG3030';chipbreaker='UG';operation='OD turning';materials=['Steel','Stainless steel'];confidence='High';dataStatus='Recognized from workshop label photo; use the box ranges as guidance and verify before cutting';}
  if(brand==='Unknown'||brand==='unknown'){
-  if(/yg-?1|yg\d{4}/i.test(code))brand='YG-1'; else if(/iscar|ic\d{4}/i.test(code))brand='ISCAR'; else if(/kennametal|kc\d{4}|kcp|kcu/i.test(code))brand='Kennametal';
+   if(/yg-?1|yg\d{4}/i.test(code)||/^YG\d{3,4}$/i.test(grade))brand='YG-1'; else if(/iscar|ic\d{4}/i.test(code)||/^IC\d{3,4}$/i.test(grade))brand='ISCAR'; else if(/kennametal|kc\d{4}|kcp|kcu/i.test(code)||/^(KC\d{3,4}|KCP|KCU)/i.test(grade))brand='Kennametal';
  }
  if(shape==='Parting'||shape==='Grooving'||/^GTN|^MGMN|^N123/.test(normalized))operation=shape==='Parting'?'Parting-off':'Grooving';
  if(shape==='Threading'||/^(16ER|16IR|11ER|11IR)/.test(normalized))operation='Threading';
@@ -259,7 +251,8 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  const catalogue=lookupKnownInsert(code); if(catalogue){brand=catalogue.brand;shape=catalogue.shape;grade=catalogue.grade;chipbreaker=catalogue.chipbreaker;operation=catalogue.operation;materials=catalogue.materials;confidence=catalogue.confidence;dataStatus=catalogue.dataStatus;return {...catalogue,code:catalogue.code,sourceUrl:catalogue.sourceUrl,sourceName:catalogue.sourceName,manufacturerSearchUrl:manufacturerSearchUrl(catalogue)};}
  return {code,brand,shape,grade,chipbreaker,operation,materials,confidence,dataStatus,manufacturerSearchUrl:manufacturerSearchUrl({brand,code,grade})};
 }
-let pendingReview=null; let pendingOcrDetails=null;
+let pendingReview=null;
+let latestOcrDetails=null;
 function openUniversalLookup(item){
   const brand=String(item.brand||'').trim(), code=String(item.code||'').trim(), grade=String(item.grade||'').trim();
   const product=[code,grade].filter(Boolean).join(' ');
@@ -282,25 +275,25 @@ function openUniversalLookup(item){
 function showReview(item){
  pendingReview=item;$('scanReview').hidden=false;
  $('reviewTitle').textContent=item.confidence==='High'?'Insert identified — review before saving':'Insert details found — review before saving';
- const lines=[`Insert code: ${item.code}`,`Manufacturer: ${item.brand}`,`Shape / type: ${item.shape}`,`Grade: ${item.grade||'Not identified'}`,`Chipbreaker: ${item.chipbreaker||'Not identified'}`,`Operation: ${item.operation||'Not identified'}`,`Materials: ${(item.materials||[]).join(', ')||'Not identified'}`,`Data status: ${item.dataStatus}`];
+ const lines=[`Insert code: ${item.code}`,`Manufacturer: ${item.brand}`,`Shape / type: ${item.shape}`,`Grade: ${item.grade||'Not identified'}`,`Chipbreaker: ${item.chipbreaker||'Not identified'}`,`Material group dot: ${item.materialGroup?item.materialGroup+' — '+(item.materialGroupLabel||'confirmed'):'Not confirmed'}`,`Operation: ${item.operation||'Not identified'}`,`Materials: ${(item.materials||[]).join(', ')||'Not identified'}`,`Data status: ${item.dataStatus}`];
  if(item.dimensions)lines.push(`Cutting width: ${item.dimensions.cuttingWidthMm} mm`, `Corner radius: ${item.dimensions.cornerRadiusMm} mm`);
  if(item.labelData){const d=item.labelData;lines.push(`BOX LABEL — steel: Vc ${d.steel.vcMin}–${d.steel.vcMax} m/min; feed ${d.steel.feedMin}–${d.steel.feedMax} mm/rev; depth ${d.steel.apMin}–${d.steel.apMax} mm`, `BOX LABEL — stainless: Vc ${d.stainless.vcMin}–${d.stainless.vcMax} m/min; feed ${d.stainless.feedMin}–${d.stainless.feedMax} mm/rev; depth ${d.stainless.apMin}–${d.stainless.apMax} mm`);}
  $('reviewDetails').textContent=lines.join('\n');$('reviewDetails').style.whiteSpace='pre-line';
- const lookup=$('manufacturerLookup');lookup.onclick=()=>openUniversalLookup(item);lookup.textContent='Search manufacturer sources';
+  $('reviewMaterialGroup').value=item.materialGroup||'';
+  $('reviewMaterialGroup').onchange=()=>{if(pendingReview){pendingReview.materialGroup=$('reviewMaterialGroup').value;pendingReview.materialGroupConfirmed=!!pendingReview.materialGroup;pendingReview.materialGroupLabel=pendingReview.materialGroup?({P:'Steel',M:'Stainless steel',K:'Cast iron',N:'Non-ferrous metals',S:'Heat-resistant alloys / titanium',H:'Hardened steel'}[pendingReview.materialGroup]):'';}};
+  const lookup=$('manufacturerLookup');lookup.onclick=()=>openUniversalLookup(item);lookup.textContent='Search manufacturer sources';
 }
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
- let inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
-  // Merge OCR fields only when they belong to the code currently being reviewed.
-  if(pendingOcrDetails && String(pendingOcrDetails.code||'').replace(/[\s_]/g,'').toUpperCase()===code.replace(/[\s_]/g,'').toUpperCase()){
-    const o=pendingOcrDetails;
-    if(o.brand && o.brand!=='Unknown')inferred.brand=o.brand;
-    if(o.shape)inferred.shape=o.shape;
-    if(o.grade)inferred.grade=o.grade;
-    if(o.chipbreaker)inferred.chipbreaker=o.chipbreaker;
-    if(o.grade||o.chipbreaker)inferred.dataStatus='Insert code captured; grade/chipbreaker transcribed by OCR and must be checked against the printed label and official manufacturer data';
+ const inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
+  if(latestOcrDetails && latestOcrDetails.code && latestOcrDetails.code.replace(/[\s_]/g,'').toUpperCase()===code.replace(/[\s_]/g,'').toUpperCase()){
+    if(latestOcrDetails.grade)inferred.grade=latestOcrDetails.grade;
+    if(latestOcrDetails.chipbreaker)inferred.chipbreaker=latestOcrDetails.chipbreaker;
+    if(latestOcrDetails.brand && latestOcrDetails.brand!=='Unknown')inferred.brand=latestOcrDetails.brand;
+    if(/^YG\d{3,4}$/i.test(inferred.grade||''))inferred.brand='YG-1';
+    inferred.dataStatus='Insert code captured; grade/chipbreaker transcribed by OCR and must be checked against the printed label and official manufacturer data';
   }
-  if(/^https?:\/\//i.test(code)){$('scanFeedback').textContent='Manufacturer URL ignored: scan or enter the printed product code instead.';$('scanCode').value='';return;}
+   if(/^https?:\/\//i.test(code)){$('scanFeedback').textContent='Manufacturer URL ignored: scan or enter the printed product code instead.';$('scanCode').value='';return;}
  if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='QR link detected, but it is not an insert identity. The app will keep reading the printed label; no inventory item was added.';$('cameraStatus').textContent='Manufacturer homepage QR ignored. Hold the printed product label in view for automatic text recognition.';$('scanCode').value='';return;}
  const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='This insert code is already in the batch or saved inventory: '+code;$('scanCode').value='';return;}
  const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
@@ -312,7 +305,6 @@ function addToBatch(){
 $('reviewSave').addEventListener('click',()=>{if(!pendingReview)return;const saved=readInventory();if(saved.some(x=>String(x.code).toLowerCase()===pendingReview.code.toLowerCase())){$('reviewDetails').textContent='This code is already saved. Duplicate skipped.';}else{try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat([pendingReview])));scanBatch=scanBatch.filter(x=>String(x.code).toLowerCase()!==pendingReview.code.toLowerCase());$('scanFeedback').textContent='Saved '+pendingReview.code+' to this phone. Ready for the next box.';pendingReview=null;$('scanReview').hidden=true;renderBatch();updateHomeStatus();$('scanCode').focus();}catch(e){$('scanFeedback').textContent='Could not save. Check phone storage settings.';}}});
 $('reviewDismiss').addEventListener('click',()=>{$('scanReview').hidden=true;pendingReview=null;$('scanFeedback').textContent='Review closed. Any item already in the batch remains there until saved or removed.';});
 $('addScan').addEventListener('click',addToBatch);
-$('scanCode').addEventListener('input',()=>{if(pendingOcrDetails && String(pendingOcrDetails.code||'').replace(/[\s_]/g,'').toUpperCase()!==$('scanCode').value.trim().replace(/[\s_]/g,'').toUpperCase())pendingOcrDetails=null;});
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
 $('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';$('scanFeedback').textContent='Saved '+fresh.length+' insert record(s) locally. Any URL-only scans still need product identification and verified cutting data.';updateHomeStatus();}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
 // Printed-label OCR: loads Tesseract.js on demand, then reads a still frame from the live camera.
@@ -346,8 +338,8 @@ async function readPrintedLabel(){
   const worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status&&m.progress!==undefined)result.textContent='Reading label: '+m.status+' '+Math.round(m.progress*100)+'%';}});
   let recognized='';try{const output=await worker.recognize(canvas);recognized=(output.data.text||'').trim();}finally{await worker.terminate();}
   if(!recognized){result.textContent='No readable text found. Move closer, improve the light, and try again.';return;}
-  const details=findOcrDetails(recognized);
-  if(details.code){$('scanCode').value=details.code;pendingOcrDetails=details;}
+  const details=findOcrDetails(recognized);latestOcrDetails=details;
+  if(details.code){$('scanCode').value=details.code;}
   if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
   let summary='Text read from label. '+(details.code?'Possible insert code: '+details.code+'. ':'No reliable insert code found. ')+(details.grade?'Grade: '+details.grade+'. ':'')+(details.brand!=='Unknown'?'Manufacturer: '+details.brand+'. ':'')+(details.chipbreaker?'Possible chipbreaker: '+details.chipbreaker+'. ':'');
@@ -366,12 +358,12 @@ async function autoReadLabelFrame(video){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);
   if(!autoOcrWorker){const Tesseract=await loadOcrLibrary();autoOcrWorker=await Tesseract.createWorker('eng',1,{logger:()=>{}});}
   const output=await autoOcrWorker.recognize(canvas);const recognized=(output.data.text||'').trim();if(!recognized)return;
-  const details=findOcrDetails(recognized);const now=Date.now();
+  const details=findOcrDetails(recognized);latestOcrDetails=details;const now=Date.now();
   // Do not create a record from generic manufacturer text; require a plausible specific product code.
   if(!details.code || details.code.length<7)return;
   if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
   lastOcrCode=details.code;lastOcrAt=now;
-  $('scanCode').value=details.code;pendingOcrDetails=details;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  $('scanCode').value=details.code;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
   $('ocrResult').hidden=false;$('ocrResult').textContent='Automatically read printed label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:'')+(details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
   $('scanFeedback').textContent='Printed insert code detected automatically: '+details.code+'. Preparing review card.';
@@ -422,3 +414,4 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 }
 </script>
 </body></html>
+```

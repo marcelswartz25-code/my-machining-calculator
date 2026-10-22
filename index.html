@@ -263,9 +263,9 @@ function showReview(item){
 }
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
- const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='Duplicate detected; this code was not added again: '+code;$('scanCode').value='';return;}
  const inferred=inferInsert(code,$('scanBrand').value,$('scanShape').value);
- if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='Scanned a manufacturer website, not a specific insert. '+inferred.dataStatus;$('cameraStatus').textContent='Homepage link detected. Scan the printed product barcode or type the insert code.';$('scanCode').value='';return;}
+ if(/^https?:\/\//i.test(code) && inferred.confidence==='Low'){$('scanBrand').value=inferred.brand;$('scanFeedback').textContent='QR link detected, but it is not an insert identity. The app will keep reading the printed label; no inventory item was added.';$('cameraStatus').textContent='Manufacturer homepage QR ignored. Hold the printed product label in view for automatic text recognition.';$('scanCode').value='';return;}
+ const all=[...readInventory(),...scanBatch]; if(all.some(x=>String(x.code).toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='This insert code is already in the batch or saved inventory: '+code;$('scanCode').value='';return;}
  const item={...inferred,addedAt:new Date().toISOString(),cuttingDataStatus:inferred.dataStatus};
  if(item.brand!=='Unknown')$('scanBrand').value=item.brand;
  if(item.shape!=='Unknown')$('scanShape').value=item.shape;
@@ -286,7 +286,7 @@ function loadOcrLibrary(){
 }
 function findOcrDetails(text){
  const upper=text.toUpperCase().replace(/[|]/g,'I');
- const codePatterns=[/\b[A-Z]{1,3}\s?\d{2,4}\s?\d{2,4}\s?[-/]\s?[A-Z0-9]{1,5}\b/g, /\b[A-Z]\d{4,8}[A-Z0-9-]{0,8}\b/g];
+ const codePatterns=[/\b(?:WNMG|DNMG|CNMG|TNMG|SNMG|VNMG|CCMT|DCMT|TCMT|VBMT|APKT|SPGT|TPGN)\s?\d{6}\s?[-/]?\s?(?:UG|UF|GM|TM|PM|LF|MF|PF|MP|MR|RP|QM|SM)?\s?[-/]?\s?(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4})?\b/g, /\b[A-Z]{1,3}\s?\d{2,4}\s?\d{2,4}\s?[-/]\s?[A-Z0-9]{1,5}\b/g, /\b[A-Z]\d{4,8}[A-Z0-9-]{0,8}\b/g];
  let code='';
  for(const pattern of codePatterns){const found=upper.match(pattern);if(found){code=found.map(x=>x.replace(/\s+/g,'')).sort((a,b)=>b.length-a.length)[0];break;}}
  const gradeMatch=upper.match(/\b(?:YG\s?\d{3,4}|KC\s?\d{3,4}|IC\s?\d{3,4}|GC\s?\d{3,4}|CP\s?\d{3,4})\b/);
@@ -321,8 +321,27 @@ async function readPrintedLabel(){
 }
 $('readLabel').addEventListener('click',readPrintedLabel);
 
+// Automatic label OCR: analyse a steady camera frame periodically without requiring a separate button tap.
+async function autoReadLabelFrame(video){
+  if(!scanLoopActive || !video.videoWidth || !video.videoHeight)return;
+  const canvas=$('ocrCanvas');const maxWidth=1150;const scale=Math.min(1,maxWidth/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);
+  if(!autoOcrWorker){const Tesseract=await loadOcrLibrary();autoOcrWorker=await Tesseract.createWorker('eng',1,{logger:()=>{}});}
+  const output=await autoOcrWorker.recognize(canvas);const recognized=(output.data.text||'').trim();if(!recognized)return;
+  const details=findOcrDetails(recognized);const now=Date.now();
+  // Do not create a record from generic manufacturer text; require a plausible specific product code.
+  if(!details.code || details.code.length<7)return;
+  if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
+  lastOcrCode=details.code;lastOcrAt=now;
+  $('scanCode').value=details.code;if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
+  if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
+  $('ocrResult').hidden=false;$('ocrResult').textContent='Automatically read printed label. Possible code: '+details.code+(details.grade?' · Grade: '+details.grade:'')+(details.brand!=='Unknown'?' · '+details.brand:'')+'. Review before saving.';
+  $('scanFeedback').textContent='Printed insert code detected automatically: '+details.code+'. Preparing review card.';
+  addToBatch();
+}
+
 // Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.
-let scanStream=null, scanLoopActive=false, lastDetectedCode='', lastDetectedAt=0;
+let scanStream=null, scanLoopActive=false, lastDetectedCode='', lastDetectedAt=0, lastAutoOcrAt=0, autoOcrBusy=false, autoOcrWorker=null, lastOcrCode='', lastOcrAt=0;
 async function startCameraScanner(){
  const video=$('scanVideo');
  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('cameraStatus').textContent='Camera access is unavailable in this browser. Use manual code entry.';return;}
@@ -334,11 +353,15 @@ async function startCameraScanner(){
   const detector=new BarcodeDetector({formats:formats.length?formats:['qr_code']});
   scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
   video.srcObject=scanStream; await video.play(); $('cameraWrap').hidden=false; $('startCamera').disabled=true; $('stopCamera').disabled=false; scanLoopActive=true;
-  $('cameraStatus').textContent='Scanner running. Hold each code steady; review the result before saving and moving on.';
+  $('cameraStatus').textContent='Automatic scanning active: QR/barcodes and printed insert labels are checked while the box is held steady. First OCR use needs internet.';
   const tick=async()=>{
    if(!scanLoopActive)return;
    try{
-    if(video.readyState>=2){const codes=await detector.detect(video);if(codes.length){const raw=(codes[0].rawValue||'').trim();const now=Date.now();if(raw && (raw!==lastDetectedCode||now-lastDetectedAt>1800)){lastDetectedCode=raw;lastDetectedAt=now;$('scanCode').value=raw;addToBatch();$('cameraStatus').textContent='Code detected. Review the result below before saving.';}}}
+    if(video.readyState>=2){
+     const codes=await detector.detect(video);
+     if(codes.length){const raw=(codes[0].rawValue||'').trim();const now=Date.now();if(raw && (raw!==lastDetectedCode||now-lastDetectedAt>5000)){lastDetectedCode=raw;lastDetectedAt=now;if(!/^https?:\/\//i.test(raw)){$('scanCode').value=raw;addToBatch();$('cameraStatus').textContent='Product barcode detected. Review the result below.';}else{$('scanFeedback').textContent='Manufacturer QR link detected; ignored as an insert code. Reading printed label automatically…';$('cameraStatus').textContent='Homepage QR ignored; automatic label reading continues.';}}}
+     const now=Date.now();if(!autoOcrBusy && now-lastAutoOcrAt>2800 && !pendingReview && now-lastDetectedAt>900){lastAutoOcrAt=now;autoOcrBusy=true;try{await autoReadLabelFrame(video);}catch(e){}finally{autoOcrBusy=false;}}
+    }
    }catch(e){}
    if(scanLoopActive)requestAnimationFrame(tick);
   };

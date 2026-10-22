@@ -21,7 +21,8 @@ select,input{width:100%;font:inherit;padding:12px;border:1px solid #cbd4e1;borde
 .segment button.active{background:#172033;color:white;border-color:#172033}
 .results{display:grid;grid-template-columns:1fr 1fr;gap:10px}.result{background:#f2f5f9;border-radius:12px;padding:13px}.result small{display:block;color:#586579;margin-bottom:5px}.result strong{font-size:1.35rem;overflow-wrap:anywhere}
 .big{background:#e6f5ec}.big strong{color:#146c3a;font-size:1.8rem}
-.note{font-size:.83rem;line-height:1.45;color:#526075}.warn{background:#fff4d9;padding:12px;border-radius:10px;font-size:.84rem;line-height:1.45}
+.note{font-size:.83rem;line-height:1.45;color:#526075}
+.nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 14px}.nav button{border:1px solid #cbd4e1;border-radius:12px;background:white;padding:12px 8px;font:inherit;font-weight:650;color:#172033}.nav button.active{background:#172033;color:white;border-color:#172033}.home-title{font-size:1.15rem;margin:0 0 6px}.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.home-card{border:1px solid #d8e0eb;border-radius:14px;background:#fff;padding:16px;text-align:left;color:#172033;font:inherit;min-height:110px}.home-card strong{display:block;font-size:1rem;margin-bottom:6px}.home-card span{display:block;font-size:.84rem;color:#526075;line-height:1.4}.statusline{padding:10px 12px;background:#eef5ff;border-radius:10px;margin:10px 0;font-size:.86rem;line-height:1.4}.warn{background:#fff4d9;padding:12px;border-radius:10px;font-size:.84rem;line-height:1.45}
 footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
 @media(min-width:560px){main{padding:20px}.panel{padding:20px}}
 </style>
@@ -29,6 +30,23 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
 <body>
 <header><h1>🔧 My Machining Calculator</h1><p>Metric machining settings · live results</p></header>
 <main>
+<nav class="nav" aria-label="Main navigation">
+  <button type="button" class="active" data-view="homeView">Home</button>
+  <button type="button" data-view="calcView">Calculator</button>
+  <button type="button" data-view="inventoryView">Insert inventory</button>
+</nav>
+<section id="homeView">
+  <section class="panel">
+    <h2 class="home-title">Workshop dashboard</h2>
+    <p class="note">Choose what you want to do. Your machining calculator stays separate from insert scanning and inventory.</p>
+    <div class="home-grid">
+      <button class="home-card" type="button" data-go="calcView"><strong>🧮 Calculator</strong><span>Calculate RPM, cutting speed, feed and depth of cut.</span></button>
+      <button class="home-card" type="button" data-go="inventoryView"><strong>📦 Insert inventory</strong><span>Scan boxes, review the batch and manage inserts saved on this phone.</span></button>
+    </div>
+  </section>
+  <section class="panel"><h2 class="home-title">Quick status</h2><p class="note" id="homeInventoryStatus">Your workshop inventory starts empty. Add only the inserts your workshop uses.</p></section>
+</section>
+<div id="calcView" hidden>
 <section class="panel">
   <div class="field"><label for="material">Material</label><select id="material">
     <option value="bright">Bright mild steel</option><option value="mild">Mild steel</option><option value="aluminium" selected>Aluminium</option><option value="stainless">Stainless steel</option><option value="cast">Cast iron</option><option value="other">Other (use steel starting values)</option>
@@ -60,12 +78,14 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   </div>
   <p class="note" id="toolnote" style="margin-bottom:0"></p>
 </section>
+</div>
+<div id="inventoryView" hidden>
 <section class="panel" id="inventoryPanel">
   <h2 style="font-size:1.1rem;margin:0 0 8px">Workshop insert inventory</h2>
   <p class="note">Start with an empty list. Add codes as you scan or read the boxes; review the batch and save the inserts to this phone.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
   <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
-  <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div>
+  <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
   <div class="grid">
     <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Other</option></select></div>
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
@@ -75,15 +95,30 @@ footer{text-align:center;color:#657188;font-size:.78rem;padding:8px 16px 24px}
   <div id="batchList" class="note"></div>
   <p class="warn" style="margin-top:10px">The camera scanner reads supported QR codes and barcodes. A code may contain only a product ID or URL, not cutting data. Unknown codes are saved for review; verify manufacturer data before using cutting settings.</p>
 </section>
+</div>
+<div id="calcSafetyView" hidden>
 <section class="panel">
   <h2 style="font-size:1.05rem;margin:0 0 8px">Before cutting</h2>
   <div class="warn">Grade descriptions are based on manufacturer catalog/product information, but the calculator's cutting speeds remain conservative starter estimates—not copied, guaranteed maker cutting data. Exact insert code, chipbreaker, workpiece grade, rigidity and machine limits matter. Aluminium needs a sharp aluminium-suitable edge; a steel chipbreaker may rub or build up.</div>
   <p class="note">RPM is calculated using N = (1000 × cutting speed) ÷ (π × diameter). For facing, use a lower speed near the centre unless your machine has a suitable constant-surface-speed system.</p>
   <p class="note" id="gradeinfo"></p>
 </section>
+</div>
 </main>
 <footer>My Machining Calculator · Offline-ready prototype · Always verify tooling and machine limits.</footer>
 <script>
+function showView(view){
+  ['homeView','calcView','inventoryView','calcSafetyView'].forEach(id=>{const el=document.getElementById(id);if(el)el.hidden=true;});
+  if(view==='calcView'){document.getElementById('calcView').hidden=false;document.getElementById('calcSafetyView').hidden=false;}
+  else if(view==='inventoryView'){document.getElementById('inventoryView').hidden=false;}
+  else document.getElementById('homeView').hidden=false;
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  window.scrollTo({top:0,behavior:'smooth'});
+  updateHomeStatus();
+}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.go)));
+function updateHomeStatus(){const saved=(()=>{try{return JSON.parse(localStorage.getItem('myMachiningCalculatorInventoryV1')||'[]')}catch(e){return []}})();const el=document.getElementById('homeInventoryStatus');if(el)el.textContent=saved.length?`${saved.length} insert record(s) saved on this phone. Open Insert inventory to review them.`:'Your workshop inventory starts empty. Add only the inserts your workshop uses.';}
 let operation='rough';
 const $=id=>document.getElementById(id);
 const grades={
@@ -178,13 +213,13 @@ function renderBatch(){
  $('batchStatus').textContent=scanBatch.length+' items in current batch · '+saved.length+' saved inserts';
  $('batchList').innerHTML='';
  if(!scanBatch.length && !saved.length){$('batchList').textContent='No inserts added yet.';return;}
- if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
+ if(scanBatch.length){const h=document.createElement('strong');h.textContent='Current batch';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';scanBatch.forEach((item,i)=>{const li=document.createElement('li');li.style.margin='6px 0';li.textContent=item.code+' · '+item.brand+' · '+item.shape+(item.cuttingDataStatus?' · '+item.cuttingDataStatus:'')+' ';const rm=document.createElement('button');rm.type='button';rm.textContent='Remove';rm.style.marginLeft='8px';rm.addEventListener('click',()=>{scanBatch.splice(i,1);renderBatch()});li.appendChild(rm);ul.appendChild(li)});$('batchList').appendChild(ul)}
  if(saved.length){const h=document.createElement('strong');h.textContent='Saved on this phone';$('batchList').appendChild(h);const ul=document.createElement('ul');ul.style.paddingLeft='20px';saved.forEach(item=>{const li=document.createElement('li');li.textContent=item.code+' · '+item.brand+' · '+item.shape;ul.appendChild(li)});$('batchList').appendChild(ul)}
 }
-function addToBatch(){const code=$('scanCode').value.trim();if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}const all=[...readInventory(),...scanBatch];if(all.some(x=>x.code.toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanCode').value='';return;}scanBatch.push({code,brand:$('scanBrand').value,shape:$('scanShape').value,addedAt:new Date().toISOString()});$('scanCode').value='';renderBatch();$('scanCode').focus()}
+function addToBatch(){const code=$('scanCode').value.trim();if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}const all=[...readInventory(),...scanBatch];if(all.some(x=>x.code.toLowerCase()===code.toLowerCase())){$('batchStatus').textContent='Duplicate skipped: '+code;$('scanFeedback').textContent='Duplicate detected; this code was not added again: '+code;$('scanCode').value='';return;}let brand=$('scanBrand').value;const lower=code.toLowerCase();if(brand==='Unknown' && lower.includes('yg1.co.kr'))brand='YG-1';else if(brand==='Unknown'&&lower.includes('iscar.com'))brand='ISCAR';else if(brand==='Unknown'&&lower.includes('kennametal.com'))brand='Kennametal';$('scanBrand').value=brand;const item={code,brand,shape:$('scanShape').value,grade:'',chipbreaker:'',operation:'',materials:[],cuttingDataStatus: /^https?:\/\//i.test(code)?'Product data not retrieved — scanned URL only':'Code captured; product details need confirmation',addedAt:new Date().toISOString()};scanBatch.push(item);$('scanCode').value='';renderBatch();$('scanFeedback').textContent='Captured and added to current batch: '+code+'. '+item.cuttingDataStatus+'. Not saved to inventory until you tap Save batch.';$('scanCode').focus()}
 $('addScan').addEventListener('click',addToBatch);
 $('scanCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addToBatch()}});
-$('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
+$('saveBatch').addEventListener('click',()=>{if(!scanBatch.length){$('batchStatus').textContent='No new inserts to save.';return;}const saved=readInventory();const seen=new Set(saved.map(x=>x.code.toLowerCase()));const fresh=scanBatch.filter(x=>!seen.has(x.code.toLowerCase()));try{localStorage.setItem(inventoryKey,JSON.stringify(saved.concat(fresh)));scanBatch=[];renderBatch();$('batchStatus').textContent='Saved '+fresh.length+' new insert(s) on this phone.';$('scanFeedback').textContent='Saved '+fresh.length+' insert record(s) locally. Any URL-only scans still need product identification and verified cutting data.';updateHomeStatus();}catch(e){$('batchStatus').textContent='Could not save locally. Check browser storage settings.';}});
 // Continuous camera scanning. Requires HTTPS and browser support for BarcodeDetector.
 let scanStream=null, scanLoopActive=false, lastDetectedCode='', lastDetectedAt=0;
 async function startCameraScanner(){
@@ -214,6 +249,8 @@ $('startCamera').addEventListener('click',startCameraScanner);
 $('stopCamera').addEventListener('click',stopCameraScanner);
 window.addEventListener('pagehide',stopCameraScanner);
 renderBatch();
+updateHomeStatus();
+showView('homeView');
 populateGrades(false);
 updateOperationFields();
 </script>

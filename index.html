@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#172033">
 <meta name="description" content="Offline-first machining calculator and workshop insert inventory">
-<meta name="app-version" content="v13">
+<meta name="app-version" content="v14">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <title>My Machining Calculator</title>
@@ -117,17 +117,18 @@ body[data-theme="dark"] .theme-control select{background:#111a27;color:#e7edf6;b
   <p class="note">Scan each box. The app will identify known insert codes automatically, show what it found, and flag anything that still needs checking before you save it.</p>
   <div class="field"><label for="scanCode">Insert box QR / barcode / printed code</label><input id="scanCode" autocomplete="off" placeholder="Scan or type a code, then tap Add"></div>
   <div class="segment"><button type="button" id="startCamera">Start camera scanner</button><button type="button" id="stopCamera" disabled>Stop scanner</button></div>
-  <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Keep the printed label in view while the camera is running. The app attempts label reading automatically; the button remains available for a manual retry. First OCR use needs an internet connection.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
+  <div class="segment" style="margin-top:8px"><button type="button" id="readLabel">Read printed label (OCR)</button></div><p class="note">Keep the printed label in view while the camera is running. The app attempts label reading automatically; the button remains available for a manual retry. OCR library currently loads on first use from the internet. The camera and inventory remain available offline; OCR needs a cached library or internet connection.</p><canvas id="ocrCanvas" hidden></canvas><div id="ocrResult" class="statusline" aria-live="polite" hidden></div>
   <div id="cameraWrap" hidden style="margin-top:10px"><video id="scanVideo" playsinline muted style="display:block;width:100%;max-height:320px;object-fit:cover;background:#111;border-radius:12px"></video><p class="note" id="cameraStatus" aria-live="polite">Point the camera at one QR code or barcode at a time.</p></div><div class="statusline" id="scanFeedback" aria-live="polite">No code scanned yet. Scans appear in the batch list below.</div>
   <div class="grid">
     <div class="field"><label for="scanBrand">Manufacturer (if known)</label><select id="scanBrand"><option value="Unknown">Unknown / other</option><option>YG-1</option><option>ISCAR</option><option>Kennametal</option><option>Sandvik Coromant</option><option>Mitsubishi Materials</option><option>Seco</option><option>Tungaloy</option><option>Sumitomo</option><option>Walter</option><option>TaeguTec</option><option>Kyocera</option><option>Other</option></select></div>
     <div class="field"><label for="scanShape">Insert shape (if known)</label><select id="scanShape"><option value="Unknown">Not identified yet</option><option>WNMG</option><option>DNMG</option><option>CNMG</option><option>TNMG</option><option>Grooving</option><option>Parting</option><option>Threading</option><option>Other</option></select></div>
   </div>
+  <div class="field" style="margin-top:10px"><label for="verifyApiUrl">Online verification service URL</label><input id="verifyApiUrl" inputmode="url" placeholder="https://your-worker.your-subdomain.workers.dev"><p class="note">Paste the Cloudflare Worker URL after deployment. It is saved on this phone. Never put your Brave API key in this app.</p><button type="button" id="saveVerifyApi">Save verification URL</button><span class="note" id="verifyApiStatus" aria-live="polite"></span></div>
   <div class="segment"><button type="button" id="addScan">Add to batch</button><button type="button" id="saveBatch">Save batch to this phone</button></div>
   <div class="segment" style="margin-top:8px"><button type="button" id="exportInventory">Export inventory backup</button><button type="button" id="importInventoryButton">Import backup</button><input id="importInventoryFile" type="file" accept="application/json,.json" hidden></div><p class="note">Back up your saved inserts to a JSON file before clearing browser data or changing phones.</p>
-  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="field" style="margin-top:10px"><label for="reviewMaterialGroup">Material group marked by the dot on the box</label><select id="reviewMaterialGroup"><option value="">Not confirmed — check the dot</option><option value="P">P — Steel</option><option value="M">M — Stainless steel</option><option value="K">K — Cast iron</option><option value="N">N — Non-ferrous metals (e.g. aluminium)</option><option value="S">S — Heat-resistant alloys / titanium</option><option value="H">H — Hardened steel</option></select><p class="note">Choose the column with the dot. The app does not guess if the dot position is unclear.</p></div><div class="segment"><button type="button" id="manufacturerLookup">Find manufacturer data online</button></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
+  <p class="note" id="batchStatus" aria-live="polite">0 items in current batch · 0 saved inserts</p><section class="panel" id="scanReview" hidden style="background:#eef5ff;margin:10px 0;padding:12px"><strong id="reviewTitle">Scan result</strong><div id="reviewDetails" class="note" style="margin:6px 0"></div><div class="field" style="margin-top:10px"><label for="reviewMaterialGroup">Material group marked by the dot on the box</label><select id="reviewMaterialGroup"><option value="">Not confirmed — check the dot</option><option value="P">P — Steel</option><option value="M">M — Stainless steel</option><option value="K">K — Cast iron</option><option value="N">N — Non-ferrous metals (e.g. aluminium)</option><option value="S">S — Heat-resistant alloys / titanium</option><option value="H">H — Hardened steel</option></select><p class="note">Choose the column with the dot. The app does not guess if the dot position is unclear.</p></div><div class="segment"><button type="button" id="manufacturerLookup">Verify against manufacturer online</button></div><div id="onlineVerifyResults" class="note" aria-live="polite"></div><div class="segment"><button type="button" id="reviewSave">Save & scan next</button><button type="button" id="reviewDismiss">Keep in batch / dismiss</button></div></section>
   <div id="batchList" class="note"></div>
-  <p class="warn" style="margin-top:10px">Universal lookup supports multiple brands. Search results open official-source-focused searches where possible; this version does not automatically import data from every supplier website. Verify exact product and cutting conditions before use.</p>
+  <p class="warn" style="margin-top:10px">Online verification uses the optional Cloudflare Worker and Brave Search API. Search-result matches are evidence candidates, not proof that every specification is correct. Confirm product identity and cutting conditions before use.</p>
 </section>
 </div>
 <div id="calcSafetyView" hidden>
@@ -344,6 +345,7 @@ function renderBatch(){
 // Small verified/traceable starter catalogue. Online manufacturer pages are opened for deeper lookup;
 // this static GitHub Pages app cannot reliably scrape every manufacturer's site because of CORS/anti-bot limits.
 const insertCatalogue = [
+ {match:/WNMG080404[-/]?UF(?:[-/]?YG3020)?|WNMG080404UFYG3020/i,code:'WNMG080404-UF',brand:'YG-1',shape:'WNMG',grade:'YG3020',chipbreaker:'UF',operation:'OD turning',materials:['Steel'],confidence:'Partial',dataStatus:'Identity and cutting ranges transcribed from the user-supplied box label. Not yet independently verified against the manufacturer cutting-data catalogue.',labelData:{steel:{vcMin:60,vcMax:380,feedMin:0.05,feedMax:0.25,apMin:0.5,apMax:2.5}},sourceName:'User-supplied YG-1 box label (not manufacturer-verified)',sourceUrl:'https://www.yg1.kr'},
  {match:/WNMG080408[-/]?UG(?:[-/]?YG3030)?|WNMG080408UGYG3030/i,code:'WNMG080408-UG',brand:'YG-1',shape:'WNMG',grade:'YG3030',chipbreaker:'UG',operation:'OD turning',materials:['Steel','Stainless steel'],confidence:'Partial',dataStatus:'Exact grade/chipbreaker needs confirmation against the official catalogue. The broad speed/feed/depth ranges are from your box label, not independently verified online.',labelData:{steel:{vcMin:70,vcMax:350,feedMin:0.20,feedMax:0.40,apMin:1,apMax:3},stainless:{vcMin:50,vcMax:220,feedMin:0.20,feedMax:0.40,apMin:1,apMax:3}},sourceName:'YG-1 official insert catalogue (near match; grade/geometry combination must be confirmed)',sourceUrl:'https://yg1usa.com/feature/item_view.asp?cat_id=6&disp=0&sub_id=114&sub_sub_id=1513'},
  {match:/A2022N00CF02/i,code:'A2022N00CF02',brand:'Kennametal',shape:'Parting',grade:'KC5025',chipbreaker:'CF',operation:'Parting-off',materials:['Steel','Stainless steel','High-temperature alloys','Titanium','Cast iron','Non-ferrous (check application)'],confidence:'High',dimensions:{cuttingWidthMm:2.2,cornerRadiusMm:0.2},dataStatus:'Product dimensions and grade match a supplier listing. Use the official Kennametal catalogue to verify application-specific cutting conditions.',sourceName:'Kennametal A2 cut-off catalogue / product listing',sourceUrl:'https://www.k2esa.com.au/wp-content/uploads/2019/03/kennametal-401-800.pdf'}
 ];
@@ -364,7 +366,7 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
  const gradeMatch=normalized.match(/(?:YG\d{4}|KC\d{4}|IC\d{4}|KCP\d{3}[A-Z]?|KCU\d{3}[A-Z]?)/);
  if(gradeMatch)grade=gradeMatch[0];
  if(/A2022N00CF02/.test(normalized)){brand='Kennametal';shape='Parting';grade='KC5025';operation='Parting-off';confidence='High';dataStatus='Recognized from workshop label photo; cutting data still needs manufacturer verification';}
- if(/WNMG080408UGYG3030/.test(normalized)||(/WNMG080408/.test(normalized)&&/YG3030/.test(normalized))){brand='YG-1';shape='WNMG';grade='YG3030';chipbreaker='UG';operation='OD turning';materials=['Steel','Stainless steel'];confidence='High';dataStatus='Recognized from workshop label photo; use the box ranges as guidance and verify before cutting';}
+ if(/WNMG080404UFYG3020/.test(normalized)||(/WNMG080404/.test(normalized)&&/YG3020/.test(normalized))){brand='YG-1';shape='WNMG';grade='YG3020';chipbreaker='UF';operation='OD turning';materials=['Steel'];confidence='Partial';dataStatus='Identity and cutting ranges transcribed from the box label; manufacturer cutting-data verification still required';}
  if(brand==='Unknown'||brand==='unknown'){
    if(/yg-?1|yg\d{4}/i.test(code)||/^YG\d{3,4}$/i.test(grade))brand='YG-1'; else if(/iscar|ic\d{4}/i.test(code)||/^IC\d{3,4}$/i.test(grade))brand='ISCAR'; else if(/kennametal|kc\d{4}|kcp|kcu/i.test(code)||/^(KC\d{3,4}|KCP|KCU)/i.test(grade))brand='Kennametal';
  }
@@ -376,6 +378,23 @@ function inferInsert(raw, selectedBrand='Unknown', selectedShape='Unknown'){
 }
 let pendingReview=null;
 let latestOcrDetails=null;
+$('verifyApiUrl').value=getVerifyApi();
+$('saveVerifyApi').addEventListener('click',()=>{const v=$('verifyApiUrl').value.trim();if(v&&!/^https:\/\//i.test(v)){$('verifyApiStatus').textContent='Use the full https:// Worker URL.';return;}localStorage.setItem(verifyApiKey,v);$('verifyApiStatus').textContent=v?'Verification service URL saved on this phone.':'Verification service URL cleared.';});
+const verifyApiKey='myMachiningCalculatorVerifyApiV1';
+function getVerifyApi(){return (localStorage.getItem(verifyApiKey)||'').trim().replace(/\/$/,'');}
+function renderVerifyResults(payload){
+ const box=$('onlineVerifyResults');box.innerHTML='';
+ const status=document.createElement('p');status.textContent=payload.statusMessage||'Search complete. Review the evidence below.';box.appendChild(status);
+ if(payload.verificationStatus){const b=document.createElement('strong');b.textContent='Evidence status: '+payload.verificationStatus;box.appendChild(b);}
+ (payload.results||[]).forEach(r=>{const card=document.createElement('div');card.style.cssText='border:1px solid var(--line,#888);border-radius:10px;padding:9px;margin:8px 0';const title=document.createElement('strong');title.textContent=r.title||'Search result';card.appendChild(title);const host=document.createElement('p');host.textContent=(r.domain||'Unknown source')+(r.official?' · manufacturer domain':' · third-party source');host.className='note';card.appendChild(host);const sn=document.createElement('p');sn.textContent=r.description||'';card.appendChild(sn);const a=document.createElement('a');a.href=r.url;a.target='_blank';a.rel='noopener';a.textContent='Open source';card.appendChild(a);box.appendChild(card);});
+ if(payload.warning){const w=document.createElement('p');w.className='warn';w.textContent=payload.warning;box.appendChild(w);}
+}
+async function verifyOnline(item){
+ const box=$('onlineVerifyResults');box.textContent='';const endpoint=getVerifyApi();
+ if(!endpoint){openUniversalLookup(item);box.textContent='No verification service URL is configured. Opened a manufacturer-focused web search instead. Configure the Cloudflare Worker URL above for automatic search-result retrieval.';return;}
+ box.textContent='Searching online manufacturer and catalogue sources for '+item.code+'…';
+ try{const response=await fetch(endpoint+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:item.code,brand:item.brand,grade:item.grade||'',chipbreaker:item.chipbreaker||'',labelText:latestOcrDetails?.rawText||''})});if(!response.ok)throw new Error('Verification service returned HTTP '+response.status);const data=await response.json();renderVerifyResults(data);item.onlineVerification={checkedAt:new Date().toISOString(),status:data.verificationStatus||'Search results returned',results:data.results||[]};if(pendingReview&&pendingReview.code===item.code)pendingReview.onlineVerification=item.onlineVerification;}catch(e){box.textContent='Online verification failed: '+e.message+'. Check the Worker URL, deployment and internet connection. No data was marked verified.';}
+}
 function openUniversalLookup(item){
   const brand=String(item.brand||'').trim(), code=String(item.code||'').trim(), grade=String(item.grade||'').trim();
   const product=[code,grade].filter(Boolean).join(' ');
@@ -404,7 +423,7 @@ function showReview(item){
  $('reviewDetails').textContent=lines.join('\n');$('reviewDetails').style.whiteSpace='pre-line';
   $('reviewMaterialGroup').value=item.materialGroup||'';
   $('reviewMaterialGroup').onchange=()=>{if(pendingReview){pendingReview.materialGroup=$('reviewMaterialGroup').value;pendingReview.materialGroupConfirmed=!!pendingReview.materialGroup;pendingReview.materialGroupLabel=pendingReview.materialGroup?({P:'Steel',M:'Stainless steel',K:'Cast iron',N:'Non-ferrous metals',S:'Heat-resistant alloys / titanium',H:'Hardened steel'}[pendingReview.materialGroup]):'';}};
-  const lookup=$('manufacturerLookup');lookup.onclick=()=>openUniversalLookup(item);lookup.textContent='Search manufacturer sources';
+  const lookup=$('manufacturerLookup');lookup.onclick=()=>verifyOnline(item);lookup.textContent='Verify against manufacturer online';$('onlineVerifyResults').textContent='Online verification has not been run for this insert yet.';
 }
 function addToBatch(){
  const code=$('scanCode').value.trim(); if(!code){$('batchStatus').textContent='Scan or enter a code first.';return;}
@@ -461,7 +480,7 @@ async function readPrintedLabel(){
   const worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status&&m.progress!==undefined)result.textContent='Reading label: '+m.status+' '+Math.round(m.progress*100)+'%';}});
   let recognized='';try{const output=await worker.recognize(canvas);recognized=(output.data.text||'').trim();}finally{await worker.terminate();}
   if(!recognized){result.textContent='No readable text found. Move closer, improve the light, and try again.';return;}
-  const details=findOcrDetails(recognized);latestOcrDetails=details;
+  const details=findOcrDetails(recognized);details.rawText=recognized;latestOcrDetails=details;
   if(details.code){$('scanCode').value=details.code;}
   if(details.brand!=='Unknown')$('scanBrand').value=details.brand;
   if(details.shape){const option=[...$('scanShape').options].find(o=>o.value===details.shape||o.text===details.shape);if(option)$('scanShape').value=option.value;}
@@ -481,7 +500,7 @@ async function autoReadLabelFrame(video){
   const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);
   if(!autoOcrWorker){const Tesseract=await loadOcrLibrary();autoOcrWorker=await Tesseract.createWorker('eng',1,{logger:()=>{}});}
   const output=await autoOcrWorker.recognize(canvas);const recognized=(output.data.text||'').trim();if(!recognized)return;
-  const details=findOcrDetails(recognized);latestOcrDetails=details;const now=Date.now();
+  const details=findOcrDetails(recognized);details.rawText=recognized;latestOcrDetails=details;const now=Date.now();
   // Do not create a record from generic manufacturer text; require a plausible specific product code.
   if(!details.code || details.code.length<7)return;
   if(details.code===lastOcrCode && now-lastOcrAt<12000)return;
